@@ -1,0 +1,15 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+src/*.o
+src/*.obj
+src/*.so
+src/*.dll
+src/*.dylib
+src/*.a
+src/*.lib
+
+*.tar.gz
+*.Rcheck/
