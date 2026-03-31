@@ -9,6 +9,7 @@ bets(
   model = "ZZZ",
   method = c("bma", "stacking", "nmig"),
   additive.only = TRUE,
+  sampler = c("ais", "amis"),
   control = list()
 )
 }
@@ -23,9 +24,17 @@ or pass a specific model specification.}
 
 \item{additive.only}{Logical; if \code{TRUE} (default), multiplicative ETS components are rejected.}
 
+\item{sampler}{Importance sampling algorithm: \code{"ais"} (single MVT proposal,
+default) or \code{"amis"} (Adaptive Multiple Importance Sampling with a
+mixture of MVT proposals and recycled historical samples).}
+
 \item{control}{Named list of tuning parameters. Missing values are filled from
 package defaults. NMIG-specific entries: \code{v_spike}, \code{v_slab}, \code{w_nmig}.
-\code{prior_models}: optional prior model probabilities for BMA.}
+\code{prior_models}: optional prior model probabilities for BMA.
+AMIS-specific entries: \code{K_mix} (number of mixture components, default 3),
+\code{ridge_eps} (ridge regularization, default 1e-4),
+\code{em_iter} (EM iterations per update, default 5),
+\code{jitter_scale} (initialization jitter, default 0.5).}
 }
 \value{
 An object of class \code{"bets"}.

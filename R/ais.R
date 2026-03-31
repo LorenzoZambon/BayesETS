@@ -210,8 +210,10 @@ compute_stacking_weights <- function(log_lik_list) {
 fit_bets_models <- function(y,
                             model_components,
                             ctrl,
-                            method = c("bma", "stacking", "nmig")) {
+                            method = c("bma", "stacking", "nmig"),
+                            sampler = c("ais", "amis")) {
   method <- match.arg(method)
+  sampler <- match.arg(sampler)
 
   verbose <- ctrl$verbose
   psi0    <- ctrl$psi0
@@ -245,7 +247,8 @@ fit_bets_models <- function(y,
   for (i in seq_along(model_components)) {
     if (verbose >= 2) cat(sprintf("\nFitting model %d of %d\n", i, n_models))
     t0 <- proc.time()[3]
-    res_i <- adaptive_is(
+    sampler_fn <- if (sampler == "amis") adaptive_mis else adaptive_is
+    res_i <- sampler_fn(
       y,
       model_components[[i]],
       ctrl = ctrl,

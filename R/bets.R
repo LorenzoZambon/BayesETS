@@ -9,9 +9,16 @@
 #' @param method Combination strategy for multi-model fitting:
 #'   `"bma"` (Bayesian Model Average, default), `"stacking"`, or `"nmig"` (spike-and-slab model selection).
 #' @param additive.only Logical; if `TRUE` (default), multiplicative ETS components are rejected.
+#' @param sampler Importance sampling algorithm: `"ais"` (single MVT proposal,
+#'   default) or `"amis"` (Adaptive Multiple Importance Sampling with a
+#'   mixture of MVT proposals and recycled historical samples).
 #' @param control Named list of tuning parameters. Missing values are filled from
 #'   package defaults. NMIG-specific entries: `v_spike`, `v_slab`, `w_nmig`.
 #'   `prior_models`: optional prior model probabilities for BMA.
+#'   AMIS-specific entries: `K_mix` (number of mixture components, default 3),
+#'   `ridge_eps` (ridge regularization, default 1e-4),
+#'   `em_iter` (EM iterations per update, default 5),
+#'   `jitter_scale` (initialization jitter, default 0.5).
 #'
 #' @return An object of class `"bets"`.
 #' @export
@@ -19,6 +26,7 @@ bets <- function(y,
                  model = "ZZZ",
                  method = c("bma", "stacking", "nmig"),
                  additive.only = TRUE,
+                 sampler = c("ais", "amis"),
                  control = list()) {
   if (!stats::is.ts(y)) {
     y <- stats::ts(y)
@@ -34,6 +42,7 @@ bets <- function(y,
   }
 
   method <- match.arg(method)
+  sampler <- match.arg(sampler)
   ctrl <- resolve_bets_control(control)
   model_components <- coerce_model_components(model, stats::frequency(y), additive.only = TRUE)  # multiplicative models not supported yet
 
@@ -41,7 +50,8 @@ bets <- function(y,
     y = y,
     model_components = model_components,
     ctrl = ctrl,
-    method = method
+    method = method,
+    sampler = sampler
   )
 
   structure(
@@ -50,6 +60,7 @@ bets <- function(y,
       fit = fit,
       model_components = model_components,
       method = method,
+      sampler = sampler,
       control = ctrl,
       call = match.call()
     ),
@@ -62,6 +73,7 @@ print.bets <- function(x, ...) {
   cat("BETS model fit\n")
   cat(sprintf("  length(y): %d\n", length(x$y)))
   cat(sprintf("  frequency: %d\n", stats::frequency(x$y)))
+  cat(sprintf("  sampler: %s\n", x$sampler))
   cat(sprintf("  combination: %s\n", x$method))
 
   mc <- if (x$method == "nmig") {

@@ -21,7 +21,11 @@ bets_control_defaults <- function() {
     v_spike = 1e-5,
     v_slab = 10.0,
     w_nmig = 0.5,
-    prior_models = NULL
+    prior_models = NULL,
+    K_mix = 3,
+    ridge_eps = 1e-4,
+    em_iter = 5,
+    jitter_scale = 0.5
   )
 }
 
