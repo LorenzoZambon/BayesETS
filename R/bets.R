@@ -12,6 +12,9 @@
 #' @param sampler Importance sampling algorithm: `"ais"` (single MVT proposal,
 #'   default) or `"amis"` (Adaptive Multiple Importance Sampling with a
 #'   mixture of MVT proposals and recycled historical samples).
+#' @param rao_blackwellize_eta Logical; if `TRUE`, analytically integrate out
+#'   the initial states (Rao-Blackwellization) instead of sampling them.
+#'   Only supported with `sampler = "ais"`. Default is `FALSE`.
 #' @param control Named list of tuning parameters. Missing values are filled from
 #'   package defaults. NMIG-specific entries: `v_spike`, `v_slab`, `w_nmig`.
 #'   `prior_models`: optional prior model probabilities for BMA.
@@ -27,6 +30,7 @@ bets <- function(y,
                  method = c("bma", "stacking", "nmig"),
                  additive.only = TRUE,
                  sampler = c("ais", "amis"),
+                 rao_blackwellize_eta = FALSE,
                  control = list()) {
   if (!stats::is.ts(y)) {
     y <- stats::ts(y)
@@ -43,6 +47,15 @@ bets <- function(y,
 
   method <- match.arg(method)
   sampler <- match.arg(sampler)
+
+  if (!is.logical(rao_blackwellize_eta) || length(rao_blackwellize_eta) != 1 ||
+      is.na(rao_blackwellize_eta)) {
+    stop("rao_blackwellize_eta must be TRUE or FALSE")
+  }
+  if (rao_blackwellize_eta && sampler == "amis") {
+    stop("Rao-Blackwellized AMIS is not implemented. Please use AIS.")
+  }
+
   ctrl <- resolve_bets_control(control)
   model_components <- coerce_model_components(model, stats::frequency(y), additive.only = TRUE)  # multiplicative models not supported yet
 
@@ -51,7 +64,8 @@ bets <- function(y,
     model_components = model_components,
     ctrl = ctrl,
     method = method,
-    sampler = sampler
+    sampler = sampler,
+    rao_blackwellize_eta = rao_blackwellize_eta
   )
 
   structure(
@@ -61,6 +75,7 @@ bets <- function(y,
       model_components = model_components,
       method = method,
       sampler = sampler,
+      rao_blackwellize_eta = rao_blackwellize_eta,
       control = ctrl,
       call = match.call()
     ),

@@ -211,7 +211,8 @@ fit_bets_models <- function(y,
                             model_components,
                             ctrl,
                             method = c("bma", "stacking", "nmig"),
-                            sampler = c("ais", "amis")) {
+                            sampler = c("ais", "amis"),
+                            rao_blackwellize_eta = FALSE) {
   method <- match.arg(method)
   sampler <- match.arg(sampler)
 
@@ -247,7 +248,11 @@ fit_bets_models <- function(y,
   for (i in seq_along(model_components)) {
     if (verbose >= 2) cat(sprintf("\nFitting model %d of %d\n", i, n_models))
     t0 <- proc.time()[3]
-    sampler_fn <- if (sampler == "amis") adaptive_mis else adaptive_is
+    if (rao_blackwellize_eta) {
+      sampler_fn <- adaptive_is_rb
+    } else {
+      sampler_fn <- if (sampler == "amis") adaptive_mis else adaptive_is
+    }
     res_i <- sampler_fn(
       y,
       model_components[[i]],

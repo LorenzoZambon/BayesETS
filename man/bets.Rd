@@ -10,6 +10,7 @@ bets(
   method = c("bma", "stacking", "nmig"),
   additive.only = TRUE,
   sampler = c("ais", "amis"),
+  rao_blackwellize_eta = FALSE,
   control = list()
 )
 }
@@ -27,6 +28,10 @@ or pass a specific model specification.}
 \item{sampler}{Importance sampling algorithm: \code{"ais"} (single MVT proposal,
 default) or \code{"amis"} (Adaptive Multiple Importance Sampling with a
 mixture of MVT proposals and recycled historical samples).}
+
+\item{rao_blackwellize_eta}{Logical; if \code{TRUE}, analytically integrate out
+the initial states (Rao-Blackwellization) instead of sampling them.
+Only supported with \code{sampler = "ais"}. Default is \code{FALSE}.}
 
 \item{control}{Named list of tuning parameters. Missing values are filled from
 package defaults. NMIG-specific entries: \code{v_spike}, \code{v_slab}, \code{w_nmig}.
