@@ -3,7 +3,7 @@
 
 # Logit and Inverse Logit
 logit <- function(p) log(p / (1 - p))
-inv_logit <- function(x) 1 / (1 + exp(-x))
+inv_logit <- stats::plogis   # compiled-C equivalent of 1/(1+exp(-x))
 
 # Transform Unconstrained -> Constrained
 # Returns list(theta, log_jac)

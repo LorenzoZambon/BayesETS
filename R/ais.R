@@ -50,11 +50,15 @@ adaptive_is <- function(y, model_components, ctrl,
   do_time <- verbose >= 1
 
   # Pre-compute once: avoid repeated as.numeric(y) and Cholesky inside the loop
-  y_vec       <- as.numeric(y)
-  R_chol      <- chol(prop_params$Sigma)               # proposal Cholesky
-  R_prior_eta <- chol(prior_eta_params$Sigma)          # prior-eta Cholesky (constant)
-  df_eta      <- prior_eta_params$df
-  mu_eta      <- prior_eta_params$mus
+  y_vec        <- as.numeric(y)
+  R_chol       <- chol(prop_params$Sigma)               # proposal Cholesky
+  R_prior_eta  <- chol(prior_eta_params$Sigma)          # prior-eta Cholesky (constant)
+  d_eta        <- length(eta_names)
+  df_eta       <- prior_eta_params$df
+  mu_eta       <- prior_eta_params$mus
+  log_det_R_pe <- sum(log(diag(R_prior_eta)))
+  lc_eta       <- lgamma((df_eta + d_eta) / 2) - lgamma(df_eta / 2) -
+                   (d_eta / 2) * log(df_eta * pi) - log_det_R_pe
 
   for (iter in seq_len(N_iter_max)) {
     if (do_time) t0 <- proc.time()[3]
@@ -81,8 +85,11 @@ adaptive_is <- function(y, model_components, ctrl,
     if (do_time) t0 <- proc.time()[3]
     log_lik <- -(nu0 + L) / 2 * log(psi0 + rss)
     # Prior log-density for eta: MVT(mu_eta, Sigma_eta, df_eta)
+    # lc_eta and R_prior_eta are constant across iterations — computed once above.
     devs_eta      <- sweep(draws$eta_free, 2, mu_eta, "-")
-    log_prior_eta <- ldmvt_chol(devs_eta, R_prior_eta, df_eta)
+    z_eta         <- forwardsolve(t(R_prior_eta), t(devs_eta))
+    mahal_eta     <- colSums(z_eta^2)
+    log_prior_eta <- lc_eta - ((df_eta + d_eta) / 2) * log(1 + mahal_eta / df_eta)
     log_target <- log_lik + log_prior_eta + log_prior_theta_const
 
     # --- NMIG spike-and-slab penalty on trend / seasonal initial states ---
