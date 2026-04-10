@@ -1,9 +1,12 @@
-bets_control_defaults <- function(rao_blackwellize_eta = FALSE) {
+bets_control_defaults <- function(rao_blackwellize_eta = FALSE, freq = 1) {
+  # Use the smaller budget when the proposal lives in a low-dimensional space:
+  # either RB is active (eta integrated out) or freq = 1 (no seasonal states).
+  low_dim <- rao_blackwellize_eta || freq == 1
   list(
     N_iter_max = 30,
-    N_draw = if (rao_blackwellize_eta) 1000L else 5000L,
+    N_draw = if (low_dim) 1000L else 5000L,
     N_draw_max = 1e5,
-    N_final = if (rao_blackwellize_eta) 500L else 1000L,
+    N_final = if (low_dim) 500L else 1000L,
     nu0 = 3,
     psi0 = NULL,
     phi_min = 0.8,
@@ -29,8 +32,8 @@ bets_control_defaults <- function(rao_blackwellize_eta = FALSE) {
   )
 }
 
-resolve_bets_control <- function(control = list(), rao_blackwellize_eta = FALSE) {
-  defaults <- bets_control_defaults(rao_blackwellize_eta)
+resolve_bets_control <- function(control = list(), rao_blackwellize_eta = FALSE, freq = 1) {
+  defaults <- bets_control_defaults(rao_blackwellize_eta, freq)
   if (!is.list(control)) {
     stop("control must be a named list")
   }

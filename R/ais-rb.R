@@ -113,27 +113,32 @@ adaptive_is_rb <- function(y, model_components, ctrl,
 
   prev_ess <- 0
   timing <- list(draw = 0, design = 0, marglik = 0, weight = 0, update = 0, post = 0)
+  do_time <- verbose >= 1
+
+  y_vec  <- as.numeric(y)
+  R_chol <- chol(theta_prop_params$Sigma)   # proposal Cholesky; recomputed after each Sigma update
 
   for (iter in seq_len(N_iter_max)) {
     # ---- Step 2: Draw theta particles ----
-    t0 <- proc.time()[3]
-    draws <- draw_theta_only(N_draw, theta_prop_params, theta_names, phi_min, phi_max)
-    timing$draw <- timing$draw + (proc.time()[3] - t0)
+    if (do_time) t0 <- proc.time()[3]
+    draws <- draw_theta_only(N_draw, theta_prop_params, theta_names, phi_min, phi_max,
+                             chol_Sigma = R_chol)
+    if (do_time) timing$draw <- timing$draw + (proc.time()[3] - t0)
 
     # ---- Step 3: Build design matrices (C++) ----
-    t0 <- proc.time()[3]
+    if (do_time) t0 <- proc.time()[3]
     design <- build_design_and_c_batch(
-      yR = as.numeric(y),
+      yR = y_vec,
       trend = trend,
       seas = seas,
       damped = damped,
       m = m,
       paramsR = draws$theta
     )
-    timing$design <- timing$design + (proc.time()[3] - t0)
+    if (do_time) timing$design <- timing$design + (proc.time()[3] - t0)
 
     # ---- Step 4: Marginal likelihood evaluation (C++) ----
-    t0 <- proc.time()[3]
+    if (do_time) t0 <- proc.time()[3]
     ml_res <- marginal_likelihood_rb(
       XtX_cube = design$XtX,
       Xty_mat  = design$Xty,
@@ -145,7 +150,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
       L        = L
     )
     log_ml <- as.numeric(ml_res$log_marginal_lik)
-    timing$marglik <- timing$marglik + (proc.time()[3] - t0)
+    if (do_time) timing$marglik <- timing$marglik + (proc.time()[3] - t0)
 
     # ---- Step 5: Weighting ----
     t0 <- proc.time()[3]
@@ -156,7 +161,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
     w <- exp(log_w - max(log_w))
     w <- w / sum(w)
     ess <- 1 / sum(w^2)
-    timing$weight <- timing$weight + (proc.time()[3] - t0)
+    if (do_time) timing$weight <- timing$weight + (proc.time()[3] - t0)
 
     if (verbose >= 2) {
       cat(sprintf("\n\nRao-Blackwellized AIS - iter %d\n", iter))
@@ -170,7 +175,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
     }
 
     # ---- Step 5 (cont.): Update theta proposal ----
-    t0 <- proc.time()[3]
+    if (do_time) t0 <- proc.time()[3]
     theta_prop_params <- update_theta_only_proposal(
       theta_unc = draws$theta_unc,
       w = w,
@@ -184,12 +189,13 @@ adaptive_is_rb <- function(y, model_components, ctrl,
     if (iter > 1 && ess < 0.8 * prev_ess) {
       theta_prop_params$Sigma <- theta_prop_params$Sigma * factor_inflate_Sigma
     }
-    timing$update <- timing$update + (proc.time()[3] - t0)
+    R_chol <- chol(theta_prop_params$Sigma)   # recompute once after Sigma update
+    if (do_time) timing$update <- timing$update + (proc.time()[3] - t0)
     prev_ess <- ess
   }
 
   # ---- Step 6: Posterior Reconstruction ----
-  t0 <- proc.time()[3]
+  if (do_time) t0 <- proc.time()[3]
   res_idx <- sample(N_draw, size = N_final, replace = TRUE, prob = w)
   thetas <- draws$theta[res_idx, , drop = FALSE]
 
@@ -199,19 +205,17 @@ adaptive_is_rb <- function(y, model_components, ctrl,
 
   sigma2s <- posterior_scale[res_idx] / stats::rchisq(N_final, df = nu_n)
 
-  # Draw eta from MVN(mu_n, sigma^2 * Vn) using Cholesky
+  # Draw eta from MVN(mu_n, sigma^2 * Vn) using vectorised Cholesky.
+  # A small ridge is always added before chol() — it is negligible relative
+  # to the posterior variance but avoids the ~0.1 ms tryCatch overhead that
+  # would otherwise be paid N_final times.
+  ridge <- 1e-8 * diag(n_eta)
   etas <- matrix(0, nrow = N_final, ncol = n_eta)
   for (j in seq_len(N_final)) {
     idx <- res_idx[j]
-    mu_n_j <- ml_res$mu_n[, idx]
-    Vn_j <- ml_res$Vn[, , idx]
-    # Cholesky of Vn (upper triangular), then L = t(R)
-    R <- tryCatch(chol(Vn_j), error = function(e) {
-      # If Cholesky fails, add small ridge and retry
-      chol(Vn_j + 1e-8 * diag(n_eta))
-    })
+    R <- chol(ml_res$Vn[, , idx] + ridge)   # upper-triangular Cholesky
     z <- stats::rnorm(n_eta)
-    etas[j, ] <- mu_n_j + sqrt(sigma2s[j]) * crossprod(R, z)
+    etas[j, ] <- ml_res$mu_n[, idx] + sqrt(sigma2s[j]) * crossprod(R, z)
   }
 
   # Name the eta columns (C++ buffer order: s_m, s_{m-1}, ..., s_1)
@@ -246,7 +250,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
     sd_mat <- matrix(sqrt(sigma2s), nrow = nrow(E), ncol = ncol(E), byrow = FALSE)
     log_lik_pointwise <- stats::dnorm(E, mean = 0, sd = sd_mat, log = TRUE)
   }
-  timing$post <- timing$post + (proc.time()[3] - t0)
+  if (do_time) timing$post <- timing$post + (proc.time()[3] - t0)
 
   list(
     thetas = thetas,
@@ -268,34 +272,36 @@ adaptive_is_rb <- function(y, model_components, ctrl,
 
 # Draw from a theta-only MVT proposal (no eta)
 draw_theta_only <- function(N, proposal_params, theta_names,
-                            phi_min, phi_max, antithetic = TRUE) {
+                            phi_min, phi_max, antithetic = TRUE,
+                            chol_Sigma = NULL) {
   df <- proposal_params$df
   mu <- proposal_params$mus
-  Sigma <- proposal_params$Sigma
+  d  <- length(mu)
+
+  if (is.null(chol_Sigma)) chol_Sigma <- chol(proposal_params$Sigma)
+
+  N_half    <- ceiling(N / 2)
+  eps       <- matrix(stats::rnorm(N_half * d), N_half, d)
+  Z_half    <- eps %*% chol_Sigma
+  chi2      <- stats::rchisq(N_half, df = df)
+  devs_half <- Z_half / sqrt(chi2 / df)
 
   if (antithetic) {
-    base <- mvtnorm::rmvt(n = ceiling(N / 2), sigma = Sigma, df = df, type = "shifted")
-    samps_unc <- rbind(base, -base) +
-      matrix(mu, nrow = nrow(base) * 2, ncol = length(mu), byrow = TRUE)
-    samps_unc <- samps_unc[1:N, , drop = FALSE]
+    devs <- rbind(devs_half, -devs_half)[1:N, , drop = FALSE]
   } else {
-    samps_unc <- mvtnorm::rmvt(n = N, sigma = Sigma, df = df,
-                               delta = mu, type = "shifted")
+    devs <- devs_half[1:N, , drop = FALSE]
   }
+  samps_unc <- sweep(devs, 2, mu, "+")
   colnames(samps_unc) <- theta_names
 
-  log_density_unc <- mvtnorm::dmvt(samps_unc, delta = mu, sigma = Sigma,
-                                   df = df, log = TRUE)
+  log_density_unc <- ldmvt_chol(devs, chol_Sigma, df)
 
-  # Transform to constrained space
-
-  trans_res <- transform_unconstrained_to_theta(samps_unc, theta_names,
-                                                phi_min, phi_max)
+  trans_res   <- transform_unconstrained_to_theta(samps_unc, theta_names, phi_min, phi_max)
   log_density <- log_density_unc - trans_res$log_jac
 
   list(
-    theta = trans_res$theta,
-    theta_unc = samps_unc,
+    theta       = trans_res$theta,
+    theta_unc   = samps_unc,
     log_density = log_density
   )
 }

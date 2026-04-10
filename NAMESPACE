@@ -3,6 +3,6 @@
 S3method(forecast,bets)
 S3method(print,bets)
 export(bets)
+export(forecast)
 importFrom(Rcpp,evalCpp)
-importFrom(forecast,forecast)
 useDynLib(BETS, .registration = TRUE)

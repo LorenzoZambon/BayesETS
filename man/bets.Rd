@@ -4,15 +4,7 @@
 \alias{bets}
 \title{Fit a Bayesian ETS model}
 \usage{
-bets(
-  y,
-  model = "ZZZ",
-  method = c("bma", "stacking", "nmig"),
-  additive.only = TRUE,
-  sampler = c("ais", "amis"),
-  rao_blackwellize_eta = FALSE,
-  control = list()
-)
+bets(y, model = "ZZZ", additive.only = TRUE, control = list())
 }
 \arguments{
 \item{y}{Univariate time series.}
@@ -20,26 +12,10 @@ bets(
 \item{model}{Model space. Use \code{"ZZZ"} (default) to search a predefined set,
 or pass a specific model specification.}
 
-\item{method}{Combination strategy for multi-model fitting:
-\code{"bma"} (Bayesian Model Average, default), \code{"stacking"}, or \code{"nmig"} (spike-and-slab model selection).}
-
 \item{additive.only}{Logical; if \code{TRUE} (default), multiplicative ETS components are rejected.}
 
-\item{sampler}{Importance sampling algorithm: \code{"ais"} (single MVT proposal,
-default) or \code{"amis"} (Adaptive Multiple Importance Sampling with a
-mixture of MVT proposals and recycled historical samples).}
-
-\item{rao_blackwellize_eta}{Logical; if \code{TRUE}, analytically integrate out
-the initial states (Rao-Blackwellization) instead of sampling them.
-Only supported with \code{sampler = "ais"}. Default is \code{FALSE}.}
-
 \item{control}{Named list of tuning parameters. Missing values are filled from
-package defaults. NMIG-specific entries: \code{v_spike}, \code{v_slab}, \code{w_nmig}.
-\code{prior_models}: optional prior model probabilities for BMA.
-AMIS-specific entries: \code{K_mix} (number of mixture components, default 3),
-\code{ridge_eps} (ridge regularization, default 1e-4),
-\code{em_iter} (EM iterations per update, default 5),
-\code{jitter_scale} (initialization jitter, default 0.5).}
+package defaults. See \strong{Details}.}
 }
 \value{
 An object of class \code{"bets"}.
@@ -47,4 +23,29 @@ An object of class \code{"bets"}.
 \description{
 Fits additive-error ETS variants using adaptive importance sampling,
 then combines models with BMA or stacking.
+}
+\details{
+\subsection{Control parameters}{
+
+The \code{control} argument accepts a named list with the following entries:
+\itemize{
+\item \code{method}: Combination strategy: \code{"bma"} (Bayesian Model Average, default),
+\code{"stacking"}, or \code{"nmig"} (spike-and-slab model selection).
+\item \code{sampler}: Importance sampling algorithm: \code{"ais"} (single MVT proposal,
+default) or \code{"amis"} (Adaptive Multiple Importance Sampling with a
+mixture of MVT proposals and recycled historical samples).
+\item \code{rao_blackwellize_eta}: Logical; if \code{TRUE}, analytically integrates out
+the initial states (Rao-Blackwellization) instead of sampling them.
+Only supported with \code{sampler = "ais"}. Defaults to \code{TRUE} for seasonal
+series (frequency > 1) and \code{FALSE} otherwise. Note: for non-seasonal
+series (frequency = 1) the parameter space is already low-dimensional
+even without RB, so the same small sample budget applies.
+\item NMIG-specific: \code{v_spike}, \code{v_slab}, \code{w_nmig}.
+\item \code{prior_models}: optional prior model probabilities for BMA.
+\item AMIS-specific: \code{K_mix} (number of mixture components, default 3),
+\code{ridge_eps} (ridge regularization, default 1e-4),
+\code{em_iter} (EM iterations per update, default 5),
+\code{jitter_scale} (initialization jitter, default 0.5).
+}
+}
 }

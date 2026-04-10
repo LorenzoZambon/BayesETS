@@ -23,7 +23,9 @@
 #' - `rao_blackwellize_eta`: Logical; if `TRUE`, analytically integrates out
 #'   the initial states (Rao-Blackwellization) instead of sampling them.
 #'   Only supported with `sampler = "ais"`. Defaults to `TRUE` for seasonal
-#'   series (frequency > 1) and `FALSE` otherwise.
+#'   series (frequency > 1) and `FALSE` otherwise. Note: for non-seasonal
+#'   series (frequency = 1) the parameter space is already low-dimensional
+#'   even without RB, so the same small sample budget applies.
 #' - NMIG-specific: `v_spike`, `v_slab`, `w_nmig`.
 #' - `prior_models`: optional prior model probabilities for BMA.
 #' - AMIS-specific: `K_mix` (number of mixture components, default 3),
@@ -78,7 +80,7 @@ bets <- function(y,
     stop("Rao-Blackwellized AMIS is not implemented. Please use AIS.")
   }
 
-  ctrl <- resolve_bets_control(control, rao_blackwellize_eta)
+  ctrl <- resolve_bets_control(control, rao_blackwellize_eta, freq)
   model_components <- coerce_model_components(model, stats::frequency(y), additive.only = TRUE)  # multiplicative models not supported yet
 
   fit <- fit_bets_models(

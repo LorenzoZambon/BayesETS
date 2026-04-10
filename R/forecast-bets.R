@@ -1,3 +1,12 @@
+#' Forecast generic
+#'
+#' Generic function for producing forecasts from fitted model objects.
+#'
+#' @param x A fitted model object.
+#' @param ... Further arguments passed to methods.
+#' @export
+forecast <- function(x, ...) UseMethod("forecast")
+
 #' Forecast from a BETS model
 #'
 #' Produces forecast distributions from a fitted `bets` object using

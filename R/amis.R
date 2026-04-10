@@ -39,18 +39,17 @@ init_mixture_proposal <- function(base_params, K = 3, jitter_scale = 0.5) {
 # x: matrix (N x d), mixture_params: mixture specification
 # Returns: numeric vector of length N
 log_density_mixture_unc <- function(x, mixture_params) {
-  K <- mixture_params$K
+  K  <- mixture_params$K
   df <- mixture_params$df
+  d  <- ncol(x)
 
   log_comp <- matrix(NA_real_, nrow = nrow(x), ncol = K)
   for (k in seq_len(K)) {
+    mu_k    <- mixture_params$mus_list[[k]]
+    chol_Rk <- chol(mixture_params$Sigma_list[[k]])
+    devs_k  <- sweep(x, 2, mu_k, "-")
     log_comp[, k] <- log(mixture_params$weights[k]) +
-      mvtnorm::dmvt(
-        x,
-        delta = mixture_params$mus_list[[k]],
-        sigma = mixture_params$Sigma_list[[k]],
-        df = df, log = TRUE
-      )
+      ldmvt_chol(devs_k, chol_Rk, df)
   }
 
   # Log-sum-exp across components
@@ -78,14 +77,12 @@ draw_from_mixture_proposal <- function(N, mixture_params, theta_names,
 
   for (k in seq_len(K)) {
     if (n_per_comp[k] > 0) {
-      idx <- which(comp_assignment == k)
-      samps_unc[idx, ] <- mvtnorm::rmvt(
-        n = n_per_comp[k],
-        sigma = mixture_params$Sigma_list[[k]],
-        df = df,
-        delta = mixture_params$mus_list[[k]],
-        type = "shifted"
-      )
+      idx     <- which(comp_assignment == k)
+      chol_Rk <- chol(mixture_params$Sigma_list[[k]])
+      samps_unc[idx, ] <- rmvt_chol(n_per_comp[k],
+                                     mixture_params$mus_list[[k]],
+                                     chol_Rk,
+                                     df)
     }
   }
 
@@ -198,11 +195,10 @@ em_update_mixture <- function(samps, w_is, mixture_params,
     # ---- E-step: responsibilities ----
     log_resp <- matrix(NA_real_, nrow = N, ncol = K)
     for (k in seq_len(K)) {
+      chol_Rk  <- chol(Sigma_list[[k]])
+      devs_k   <- sweep(samps, 2, mus_list[[k]], "-")
       log_resp[, k] <- log(pmax(weights[k], 1e-300)) +
-        mvtnorm::dmvt(samps,
-                      delta = mus_list[[k]],
-                      sigma = Sigma_list[[k]],
-                      df = df, log = TRUE)
+        ldmvt_chol(devs_k, chol_Rk, df)
     }
 
     # Normalize across components (log-sum-exp per row)
@@ -321,6 +317,13 @@ adaptive_mis <- function(y, model_components, ctrl,
   timing <- list(draw = 0, refit = 0, weight = 0, update = 0, post = 0)
   amis_res <- NULL
 
+  # Pre-compute prior-eta Cholesky and log-density constant (constant across iters)
+  R_prior_eta  <- chol(prior_eta_params$Sigma)
+  d_eta        <- length(eta_names)
+  df_eta       <- prior_eta_params$df
+  mu_eta       <- prior_eta_params$mus
+  y_vec        <- as.numeric(y)
+
   for (iter in seq_len(N_iter_max)) {
 
     # ---- Draw from current mixture ----
@@ -332,7 +335,7 @@ adaptive_mis <- function(y, model_components, ctrl,
     # ---- Evaluate model (RSS + states) ----
     t0 <- proc.time()[3]
     refit <- RSS_vect_arma(
-      yR = as.numeric(y),
+      yR = y_vec,
       trend = trend, seas = seas, damped = damped, m = m,
       init_statesR = draws$eta,
       paramsR = draws$theta,
@@ -344,13 +347,8 @@ adaptive_mis <- function(y, model_components, ctrl,
     # ---- Compute log target ----
     t0 <- proc.time()[3]
     log_lik <- -(nu0 + L) / 2 * log(psi0 + rss)
-    log_prior_eta <- mvtnorm::dmvt(
-      x     = draws$eta_free,
-      delta = prior_eta_params$mus,
-      sigma = prior_eta_params$Sigma,
-      df    = prior_eta_params$df,
-      log   = TRUE
-    )
+    devs_eta      <- sweep(draws$eta_free, 2, mu_eta, "-")
+    log_prior_eta <- ldmvt_chol(devs_eta, R_prior_eta, df_eta)
     log_target <- log_lik + log_prior_eta + log_prior_theta_const
 
     if (use_nmig) {

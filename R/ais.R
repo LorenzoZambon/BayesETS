@@ -47,17 +47,26 @@ adaptive_is <- function(y, model_components, ctrl,
 
   prev_ess <- 0
   timing <- list(draw = 0, refit = 0, weight = 0, update = 0, post = 0)
+  do_time <- verbose >= 1
+
+  # Pre-compute once: avoid repeated as.numeric(y) and Cholesky inside the loop
+  y_vec       <- as.numeric(y)
+  R_chol      <- chol(prop_params$Sigma)               # proposal Cholesky
+  R_prior_eta <- chol(prior_eta_params$Sigma)          # prior-eta Cholesky (constant)
+  df_eta      <- prior_eta_params$df
+  mu_eta      <- prior_eta_params$mus
 
   for (iter in seq_len(N_iter_max)) {
-    t0 <- proc.time()[3]
-    draws <- draw_from_joint_proposal(N_draw, prop_params, theta_names, phi_min, phi_max)
+    if (do_time) t0 <- proc.time()[3]
+    draws <- draw_from_joint_proposal(N_draw, prop_params, theta_names, phi_min, phi_max,
+                                      chol_Sigma = R_chol)
     theta_samp <- draws$theta
     eta_samp <- draws$eta
-    timing$draw <- timing$draw + (proc.time()[3] - t0)
+    if (do_time) timing$draw <- timing$draw + (proc.time()[3] - t0)
 
-    t0 <- proc.time()[3]
+    if (do_time) t0 <- proc.time()[3]
     refit <- RSS_vect_arma(
-      yR = as.numeric(y),
+      yR = y_vec,
       trend = trend,
       seas = seas,
       damped = damped,
@@ -67,17 +76,13 @@ adaptive_is <- function(y, model_components, ctrl,
       return_residuals = return_pointwise
     )
     rss <- c(refit$RSS)
-    timing$refit <- timing$refit + (proc.time()[3] - t0)
+    if (do_time) timing$refit <- timing$refit + (proc.time()[3] - t0)
 
-    t0 <- proc.time()[3]
+    if (do_time) t0 <- proc.time()[3]
     log_lik <- -(nu0 + L) / 2 * log(psi0 + rss)
-    log_prior_eta <- mvtnorm::dmvt(
-      x = draws$eta_free,
-      delta = prior_eta_params$mus,
-      sigma = prior_eta_params$Sigma,
-      df = prior_eta_params$df,
-      log = TRUE
-    )
+    # Prior log-density for eta: MVT(mu_eta, Sigma_eta, df_eta)
+    devs_eta      <- sweep(draws$eta_free, 2, mu_eta, "-")
+    log_prior_eta <- ldmvt_chol(devs_eta, R_prior_eta, df_eta)
     log_target <- log_lik + log_prior_eta + log_prior_theta_const
 
     # --- NMIG spike-and-slab penalty on trend / seasonal initial states ---
@@ -98,7 +103,7 @@ adaptive_is <- function(y, model_components, ctrl,
     w <- exp(log_w - max(log_w))
     w <- w / sum(w)
     ess <- 1 / sum(w^2)
-    timing$weight <- timing$weight + (proc.time()[3] - t0)
+    if (do_time) timing$weight <- timing$weight + (proc.time()[3] - t0)
 
     if (verbose >= 2) cat(sprintf("\n\nAdaptive Importance Sampling - iter %d\n", iter))
     if (verbose >= 2) cat(sprintf("\n ESS = %.1f\n", ess))
@@ -109,7 +114,7 @@ adaptive_is <- function(y, model_components, ctrl,
       break
     }
 
-    t0 <- proc.time()[3]
+    if (do_time) t0 <- proc.time()[3]
     prop_params <- update_joint_proposal(
       theta_unc = draws$theta_unc,
       eta_free = draws$eta_free,
@@ -125,11 +130,12 @@ adaptive_is <- function(y, model_components, ctrl,
     if (iter > 1 && ess < 0.8 * prev_ess) {
       prop_params$Sigma <- prop_params$Sigma * factor_inflate_Sigma
     }
-    timing$update <- timing$update + (proc.time()[3] - t0)
+    R_chol <- chol(prop_params$Sigma)   # recompute once after Sigma update
+    if (do_time) timing$update <- timing$update + (proc.time()[3] - t0)
     prev_ess <- ess
   }
 
-  t0 <- proc.time()[3]
+  if (do_time) t0 <- proc.time()[3]
   res_idx <- sample(N_draw, size = N_final, replace = TRUE, prob = w)
   thetas <- theta_samp[res_idx, , drop = FALSE]
   etas <- eta_samp[res_idx, , drop = FALSE]
@@ -145,7 +151,7 @@ adaptive_is <- function(y, model_components, ctrl,
     sd_mat <- matrix(sqrt(sigma2s), nrow = nrow(E), ncol = ncol(E), byrow = FALSE)
     log_lik_pointwise <- stats::dnorm(E, mean = 0, sd = sd_mat, log = TRUE)
   }
-  timing$post <- timing$post + (proc.time()[3] - t0)
+  if (do_time) timing$post <- timing$post + (proc.time()[3] - t0)
 
   list(
     thetas = thetas,
