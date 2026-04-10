@@ -78,7 +78,7 @@ bets <- function(y,
     stop("Rao-Blackwellized AMIS is not implemented. Please use AIS.")
   }
 
-  ctrl <- resolve_bets_control(control)
+  ctrl <- resolve_bets_control(control, rao_blackwellize_eta)
   model_components <- coerce_model_components(model, stats::frequency(y), additive.only = TRUE)  # multiplicative models not supported yet
 
   fit <- fit_bets_models(
