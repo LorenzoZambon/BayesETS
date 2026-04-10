@@ -18,9 +18,10 @@
 \item{...}{Unused.}
 }
 \value{
-An object with class \code{c("bets_forecast", "forecast")}.
+An object of class \code{c("bets_forecast", "forecast")}.
 }
 \description{
-Produces forecast distributions from a fitted \code{bets} object using
-Monte Carlo trajectories.
+Thin wrapper around \code{\link[=predict.bets]{predict.bets()}} that satisfies the
+\code{forecast::forecast} generic so BETS objects work seamlessly with the
+\code{forecast} ecosystem.
 }

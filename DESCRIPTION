@@ -11,13 +11,14 @@ Authors@R: c(
   )
 Description: Fits Bayesian additive-error ETS state space models using adaptive
     importance sampling and supports model combination via Bayesian model
-    averaging or stacking, with forecast generation through a built-in
-    forecast generic.
+    averaging or stacking, with forecast generation via predict() and the
+    forecast package interface.
 License: GPL-3
 Encoding: UTF-8
 LazyData: true
 Imports: 
-  Rcpp (>= 1.1.0)
+  Rcpp (>= 1.1.0),
+  forecast
 LinkingTo: 
   Rcpp,
   RcppArmadillo
