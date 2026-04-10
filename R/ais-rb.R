@@ -59,19 +59,21 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   # So V0 = Sigma_heuristic / psi0
   Sigma_heuristic_free <- eta_init$Sigma * c_inflate_eta
 
-  # Expand to include the constrained seasonal state
+  # Expand to include the constrained seasonal state.
+  # The sum-to-zero constraint s_1 + ... + s_m = 0 is structural (enforced by
+  # the design matrix X), so the prior does not need to encode it.  Encoding
+  # it via off-diagonal coupling terms makes Sigma_full exactly rank-deficient
+  # (the direction [0,...,0,1,...,1] over all seasonal states has zero
+  # quadratic form), causing inv_sympd(V0) to fail.  Use an independent prior
+  # for s_m with the same marginal scale as the other seasonal states instead.
   if (seas && m > 1) {
     n_free <- length(eta0_free)
     n_full <- n_eta
     s_indices_free <- grep("^s\\d+$", names(eta0_free))
     Sigma_full <- matrix(0, n_full, n_full)
     Sigma_full[1:n_free, 1:n_free] <- Sigma_heuristic_free
-
-    for (j in s_indices_free) {
-      Sigma_full[n_full, j] <- -Sigma_heuristic_free[j, j]
-      Sigma_full[j, n_full] <- -Sigma_heuristic_free[j, j]
-    }
-    Sigma_full[n_full, n_full] <- sum(diag(Sigma_heuristic_free)[s_indices_free])
+    # Independent prior for the constrained seasonal state s_m
+    Sigma_full[n_full, n_full] <- mean(diag(Sigma_heuristic_free)[s_indices_free])
   } else {
     Sigma_full <- Sigma_heuristic_free
   }
