@@ -1,9 +1,12 @@
-bets_control_defaults <- function() {
+bets_control_defaults <- function(rao_blackwellize_eta = FALSE, freq = 1) {
+  # Use the smaller budget when the proposal lives in a low-dimensional space:
+  # either RB is active (eta integrated out) or freq = 1 (no seasonal states).
+  low_dim <- rao_blackwellize_eta || freq == 1
   list(
     N_iter_max = 30,
-    N_draw = 5000,
+    N_draw = if (low_dim) 1000L else 5000L,
     N_draw_max = 1e5,
-    N_final = 1000,
+    N_final = if (low_dim) 500L else 1000L,
     nu0 = 3,
     psi0 = NULL,
     phi_min = 0.8,
@@ -21,19 +24,26 @@ bets_control_defaults <- function() {
     v_spike = 1e-5,
     v_slab = 10.0,
     w_nmig = 0.5,
-    prior_models = NULL
+    prior_models = NULL,
+    K_mix = 3,
+    ridge_eps = 1e-4,
+    em_iter = 5,
+    jitter_scale = 0.5
   )
 }
 
-resolve_bets_control <- function(control = list()) {
-  defaults <- bets_control_defaults()
+resolve_bets_control <- function(control = list(), rao_blackwellize_eta = FALSE, freq = 1) {
+  defaults <- bets_control_defaults(rao_blackwellize_eta, freq)
   if (!is.list(control)) {
     stop("control must be a named list")
   }
-  unknown <- setdiff(names(control), names(defaults))
+  # method, sampler, rao_blackwellize_eta live in control but are not tuning params
+  bets_keys <- c("method", "sampler", "rao_blackwellize_eta")
+  unknown <- setdiff(names(control), c(names(defaults), bets_keys))
   if (length(unknown) > 0) {
     stop(sprintf("Unknown control entries: %s", paste(unknown, collapse = ", ")))
   }
+  control <- control[setdiff(names(control), bets_keys)]
 
   out <- utils::modifyList(defaults, control)
   if (is.null(out$min_ess)) out$min_ess <- out$N_final / 2

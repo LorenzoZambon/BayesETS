@@ -3,7 +3,7 @@
 
 # Logit and Inverse Logit
 logit <- function(p) log(p / (1 - p))
-inv_logit <- function(x) 1 / (1 + exp(-x))
+inv_logit <- stats::plogis   # compiled-C equivalent of 1/(1+exp(-x))
 
 # Transform Unconstrained -> Constrained
 # Returns list(theta, log_jac)
@@ -173,62 +173,99 @@ init_joint_params <- function(y, model_components, theta_names, eta_df = 7) {
   list(mus = joint_mus, Sigma = Sigma_joint, df = eta_df)
 }
 
+# ---------------------------------------------------------------------------
+# Low-level MVT helpers (no mvtnorm dependency)
+# ---------------------------------------------------------------------------
+
+# Sample n rows from MVT(mu, Sigma, df) given upper Cholesky R (R'R = Sigma).
+rmvt_chol <- function(n, mu, chol_R, df) {
+  d     <- length(mu)
+  eps   <- matrix(stats::rnorm(n * d), n, d)
+  Z     <- eps %*% chol_R                       # ~ MVN(0, Sigma)
+  chi2  <- stats::rchisq(n, df = df)
+  devs  <- Z / sqrt(chi2 / df)                  # zero-centred MVT deviations
+  sweep(devs, 2, mu, "+")
+}
+
+# Log-density of MVT(mu, Sigma, df) for N rows, given:
+#   devs   : N x d matrix of (x - mu) deviations
+#   chol_R : upper Cholesky of Sigma
+#   df     : degrees of freedom
+# Returns a length-N numeric vector.
+ldmvt_chol <- function(devs, chol_R, df) {
+  d           <- ncol(devs)
+  z           <- forwardsolve(t(chol_R), t(devs))      # d x N
+  mahal       <- colSums(z^2)
+  log_det_R   <- sum(log(diag(chol_R)))                 # = 0.5 * log|Sigma|
+  log_const   <- lgamma((df + d) / 2) - lgamma(df / 2) -
+                 (d / 2) * log(df * pi) - log_det_R
+  log_const - ((df + d) / 2) * log(1 + mahal / df)
+}
+
 # Draw from Joint Proposal
 draw_from_joint_proposal <- function(N, proposal_params,
                                      theta_names, phi_min, phi_max,
-                                     antithetic = TRUE) {
+                                     antithetic = TRUE,
+                                     chol_Sigma = NULL) {
 
-  df <- proposal_params$df
-  mu <- proposal_params$mus
-  Sigma <- proposal_params$Sigma
+  df          <- proposal_params$df
+  mu          <- proposal_params$mus
   param_names <- names(mu)
+  d           <- length(mu)
 
-  # 1. Sample Unconstrained Joint Vector
+  # Pre-compute Cholesky of Sigma if not supplied by the caller.
+  # When supplied, this decomposition is re-used across calls within one
+  # AIS iteration, eliminating the double Cholesky that mvtnorm::rmvt and
+  # mvtnorm::dmvt would each compute independently.
+  if (is.null(chol_Sigma)) chol_Sigma <- chol(proposal_params$Sigma)
+
+  # Sample from MVT(mu, Sigma, df) using the Cholesky factor:
+  #   z = eps %*% R,  eps ~ N(0,I)  =>  z ~ MVN(0, Sigma)
+  #   x = mu + z / sqrt(chi2/df),  chi2 ~ chi^2(df)
+  N_half    <- ceiling(N / 2)
+  eps       <- matrix(stats::rnorm(N_half * d), N_half, d)
+  Z_half    <- eps %*% chol_Sigma                      # N_half x d, ~ MVN(0, Sigma)
+  chi2      <- stats::rchisq(N_half, df = df)
+  devs_half <- Z_half / sqrt(chi2 / df)               # zero-centred MVT deviations
+
   if (antithetic) {
-    base <- mvtnorm::rmvt(n = ceiling(N / 2), sigma = Sigma, df = df, type = "shifted")
-    samps_unc <- rbind(base, -base) + matrix(mu, nrow = nrow(base) * 2, ncol = length(mu), byrow = TRUE)
-    samps_unc <- samps_unc[1:N, , drop = FALSE]
+    devs <- rbind(devs_half, -devs_half)[1:N, , drop = FALSE]
   } else {
-    samps_unc <- mvtnorm::rmvt(n = N, sigma = Sigma, df = df, delta = mu, type = "shifted")
+    devs <- devs_half[1:N, , drop = FALSE]
   }
+  samps_unc <- sweep(devs, 2, mu, "+")
   colnames(samps_unc) <- param_names
 
-  # 2. Compute Proposal Log Density (on unconstrained space)
-  log_density_unc <- mvtnorm::dmvt(samps_unc, delta = mu, sigma = Sigma, df = df, log = TRUE)
+  # Log-density via ldmvt_chol — one triangular solve, no re-decomposition.
+  log_density_unc <- ldmvt_chol(devs, chol_Sigma, df)
 
-  # 3. Split into Theta and Eta
+  # Split into theta and eta columns
   theta_cols <- which(param_names %in% theta_names)
   eta_cols   <- which(!param_names %in% theta_names)
+  theta_unc  <- samps_unc[, theta_cols, drop = FALSE]
+  eta_free   <- samps_unc[, eta_cols,   drop = FALSE]
 
-  theta_unc <- samps_unc[, theta_cols, drop = FALSE]
-  eta_free  <- samps_unc[, eta_cols,   drop = FALSE]
-
-  # 4. Transform Theta -> Constrained
-  trans_res <- transform_unconstrained_to_theta(theta_unc, theta_names, phi_min, phi_max)
-  theta_con <- trans_res$theta
-
-  # Adjust log density by Jacobian: log q(theta, eta) = log q(u) - log |J|
+  # Transform theta to constrained space; adjust log-density by Jacobian
+  trans_res   <- transform_unconstrained_to_theta(theta_unc, theta_names, phi_min, phi_max)
+  theta_con   <- trans_res$theta
   log_density <- log_density_unc - trans_res$log_jac
 
-  # 5. Handle Eta constraints (Seasonal sum to 0)
-  # Identify if we have seasonal components s1...sm-1
+  # Handle seasonal sum-to-zero constraint for eta
   s_cols_free <- grep("^s\\d+$", colnames(eta_free), value = TRUE)
   if (length(s_cols_free) > 0) {
-    # Calculate last seasonal state
-    last_s <- -rowSums(eta_free[, s_cols_free, drop = FALSE])
+    last_s  <- -rowSums(eta_free[, s_cols_free, drop = FALSE])
     eta_con <- cbind(eta_free, last_s)
-    # determine m index
-    m_idx <- max(as.integer(sub("s", "", s_cols_free))) + 1
+    m_idx   <- max(as.integer(sub("s", "", s_cols_free))) + 1
     colnames(eta_con)[ncol(eta_con)] <- paste0("s", m_idx)
   } else {
     eta_con <- eta_free
   }
 
   list(
-    theta = theta_con,
-    eta = eta_con,
-    theta_unc = theta_unc,
-    eta_free = eta_free,
+    theta       = theta_con,
+    eta         = eta_con,
+    theta_unc   = theta_unc,
+    eta_free    = eta_free,
     log_density = log_density
   )
 }
