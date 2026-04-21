@@ -288,9 +288,31 @@ adaptive_mis <- function(y, model_components, ctrl,
                     if (seas) "gamma")
 
   # ---- Initialize ----
-  base_params <- init_joint_params(y, model_components, theta_names, eta_df)
-  mixture <- init_mixture_proposal(base_params, K = K_mix,
-                                   jitter_scale = jitter_scale)
+  if (ctrl$init == "random_search") {
+    # For AMIS, use top-K Sobol candidates as the K component means directly —
+    # genuinely diverse starting points instead of jittered copies of one.
+    mixture    <- init_mixture_params_random_search(
+      y, model_components, theta_names, eta_df,
+      phi_min, phi_max, ctrl$n_sobol, K_mix
+    )
+    base_params <- init_joint_params(y, model_components, theta_names, eta_df)
+
+  } else if (ctrl$init == "mle") {
+    base_params <- init_joint_params_mle(
+        y, model_components, theta_names, eta_df,
+        phi_min, phi_max, ctrl$mle_tol, ctrl$mle_maxit
+      )
+    mixture <- init_mixture_proposal(base_params, K = K_mix,
+                                     jitter_scale = jitter_scale)
+
+  } else if (ctrl$init == "heuristic") {
+    base_params <- init_joint_params(y, model_components, theta_names, eta_df) 
+    mixture <- init_mixture_proposal(base_params, K = K_mix,
+                                     jitter_scale = jitter_scale)
+                                     
+  } else {
+    stop("Invalid init method")
+  }
 
   eta_names <- setdiff(names(base_params$mus), theta_names)
   prior_eta_params <- list(

@@ -100,11 +100,29 @@ adaptive_is_rb <- function(y, model_components, ctrl,
 
   # ---- Initialize theta-only proposal ----
   # Start from the joint init but extract theta portion only
-  joint_init <- init_joint_params(y, model_components, theta_names, eta_df)
+  joint_init <- switch(ctrl$init,
+    mle = init_joint_params_mle(
+      y, model_components, theta_names, eta_df,
+      phi_min, phi_max, ctrl$mle_tol, ctrl$mle_maxit
+    ),
+    random_search = init_joint_params_random_search(
+      y, model_components, theta_names, eta_df,
+      phi_min, phi_max, ctrl$n_sobol,
+      score = "rb_marglik",
+      rb_scoring = list(
+        eta0 = eta0,
+        V0 = V0,
+        nu0 = nu0,
+        psi0 = psi0,
+        L = L
+      )
+    ),
+    init_joint_params(y, model_components, theta_names, eta_df)  # heuristic
+  )
   theta_prop_params <- list(
-    mus = joint_init$mus[theta_names],
+    mus   = joint_init$mus[theta_names],
     Sigma = joint_init$Sigma[theta_names, theta_names, drop = FALSE],
-    df = joint_init$df
+    df    = joint_init$df
   )
 
   dummy_theta <- matrix(0, nrow = 1, ncol = n_theta)

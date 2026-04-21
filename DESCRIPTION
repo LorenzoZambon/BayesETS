@@ -18,7 +18,8 @@ Encoding: UTF-8
 LazyData: true
 Imports: 
   Rcpp (>= 1.1.0),
-  forecast
+  forecast,
+  qrng
 LinkingTo: 
   Rcpp,
   RcppArmadillo

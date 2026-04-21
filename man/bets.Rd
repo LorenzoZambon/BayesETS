@@ -36,16 +36,29 @@ default) or \code{"amis"} (Adaptive Multiple Importance Sampling with a
 mixture of MVT proposals and recycled historical samples).
 \item \code{rao_blackwellize_eta}: Logical; if \code{TRUE}, analytically integrates out
 the initial states (Rao-Blackwellization) instead of sampling them.
-Only supported with \code{sampler = "ais"}. Defaults to \code{TRUE} for seasonal
-series (frequency > 1) and \code{FALSE} otherwise. Note: for non-seasonal
-series (frequency = 1) the parameter space is already low-dimensional
-even without RB, so the same small sample budget applies.
+Only supported with \code{sampler = "ais"}. Defaults to \code{TRUE} for AIS fits
+and \code{FALSE} for AMIS fits, where Rao-Blackwellization is not implemented.
 \item NMIG-specific: \code{v_spike}, \code{v_slab}, \code{w_nmig}.
 \item \code{prior_models}: optional prior model probabilities for BMA.
 \item AMIS-specific: \code{K_mix} (number of mixture components, default 3),
 \code{ridge_eps} (ridge regularization, default 1e-4),
 \code{em_iter} (EM iterations per update, default 5),
 \code{jitter_scale} (initialization jitter, default 0.5).
+\item \code{init}: Proposal initialization strategy: \code{"random_search"} (default),
+\code{"heuristic"}, or \code{"mle"}. When \code{"mle"}, Nelder-Mead optimization is run first
+to find an approximate MLE for theta (analytically integrating out eta at
+each evaluation). When \code{"random_search"}, a Sobol low-discrepancy sequence
+is evaluated over the unconstrained parameter space in a single vectorized
+batch call, and the best candidate is used as the proposal centre. This is
+typically faster than \code{"mle"} for low-dimensional models because all
+candidates are evaluated in one C++ call to \code{build_design_and_c_batch}.
+\item \code{n_sobol}: Number of Sobol candidates for \code{init = "random_search"}. Default
+\code{NULL} auto-selects \code{2^(d+3)} (16 / 32 / 64 / 128 for d = 1..4). Powers
+of 2 are optimal for Sobol sequences.
+\item \code{mle_tol}: Relative convergence tolerance for the Nelder-Mead optimizer
+used when \code{init = "mle"}. A high value (default \code{1e-3}) means we converge
+only roughly — sufficient to get a good starting region.
+\item \code{mle_maxit}: Maximum number of Nelder-Mead iterations (default \code{500}).
 }
 }
 }

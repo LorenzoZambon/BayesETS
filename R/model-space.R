@@ -1,4 +1,4 @@
-bets_control_defaults <- function(rao_blackwellize_eta = FALSE, freq = 1) {
+bets_control_defaults <- function(rao_blackwellize_eta = TRUE, freq = 1) {
   # Use the smaller budget when the proposal lives in a low-dimensional space:
   # either RB is active (eta integrated out) or freq = 1 (no seasonal states).
   low_dim <- rao_blackwellize_eta || freq == 1
@@ -28,7 +28,11 @@ bets_control_defaults <- function(rao_blackwellize_eta = FALSE, freq = 1) {
     K_mix = 3,
     ridge_eps = 1e-4,
     em_iter = 5,
-    jitter_scale = 0.5
+    jitter_scale = 0.5,
+    init = "random_search",
+    mle_tol = 1e-3,
+    mle_maxit = 500L,
+    n_sobol = NULL
   )
 }
 
@@ -47,6 +51,7 @@ resolve_bets_control <- function(control = list(), rao_blackwellize_eta = FALSE,
 
   out <- utils::modifyList(defaults, control)
   if (is.null(out$min_ess)) out$min_ess <- out$N_final / 2
+  out$init <- match.arg(out$init, c("heuristic", "mle", "random_search"))
   out
 }
 
@@ -112,6 +117,10 @@ coerce_model_components <- function(model, m, additive.only = TRUE) {
     }
     if (!season_comp %in% c("N", "A", "M")) {
       stop("Invalid seasonal component: allowed values are 'N', 'A', 'M'")
+    }
+
+    if (m <= 1 && season_comp != "N") {
+      stop("Seasonal models require frequency(y) > 1")
     }
 
     damped_norm <- if (is.null(damped)) damped_from_trend else normalize_damped(damped)

@@ -32,7 +32,17 @@ adaptive_is <- function(y, model_components, ctrl,
   damped <- (model_components[[4]] == "TRUE")
   theta_names <- c("alpha", if (trend) c("beta", if (damped) "phi"), if (seas) "gamma")
 
-  prop_params <- init_joint_params(y, model_components, theta_names, eta_df)
+  prop_params <- switch(ctrl$init,
+    mle = init_joint_params_mle(
+      y, model_components, theta_names, eta_df,
+      phi_min, phi_max, ctrl$mle_tol, ctrl$mle_maxit
+    ),
+    random_search = init_joint_params_random_search(
+      y, model_components, theta_names, eta_df,
+      phi_min, phi_max, ctrl$n_sobol
+    ),
+    init_joint_params(y, model_components, theta_names, eta_df)  # heuristic
+  )
 
   eta_names <- setdiff(colnames(prop_params$Sigma), theta_names)
   prior_eta_params <- list(
@@ -107,9 +117,11 @@ adaptive_is <- function(y, model_components, ctrl,
     }
 
     log_w <- log_target - draws$log_density
+    log_w[!is.finite(log_w)] <- -Inf
     w <- exp(log_w - max(log_w))
     w <- w / sum(w)
     ess <- 1 / sum(w^2)
+    if (!is.finite(ess)) ess <- 0
     if (do_time) timing$weight <- timing$weight + (proc.time()[3] - t0)
 
     if (verbose >= 2) cat(sprintf("\n\nAdaptive Importance Sampling - iter %d\n", iter))

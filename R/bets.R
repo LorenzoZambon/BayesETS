@@ -22,16 +22,29 @@
 #'   mixture of MVT proposals and recycled historical samples).
 #' - `rao_blackwellize_eta`: Logical; if `TRUE`, analytically integrates out
 #'   the initial states (Rao-Blackwellization) instead of sampling them.
-#'   Only supported with `sampler = "ais"`. Defaults to `TRUE` for seasonal
-#'   series (frequency > 1) and `FALSE` otherwise. Note: for non-seasonal
-#'   series (frequency = 1) the parameter space is already low-dimensional
-#'   even without RB, so the same small sample budget applies.
+#'   Only supported with `sampler = "ais"`. Defaults to `TRUE` for AIS fits
+#'   and `FALSE` for AMIS fits, where Rao-Blackwellization is not implemented.
 #' - NMIG-specific: `v_spike`, `v_slab`, `w_nmig`.
 #' - `prior_models`: optional prior model probabilities for BMA.
 #' - AMIS-specific: `K_mix` (number of mixture components, default 3),
 #'   `ridge_eps` (ridge regularization, default 1e-4),
 #'   `em_iter` (EM iterations per update, default 5),
 #'   `jitter_scale` (initialization jitter, default 0.5).
+#' - `init`: Proposal initialization strategy: `"random_search"` (default),
+#'   `"heuristic"`, or `"mle"`. When `"mle"`, Nelder-Mead optimization is run first
+#'   to find an approximate MLE for theta (analytically integrating out eta at
+#'   each evaluation). When `"random_search"`, a Sobol low-discrepancy sequence
+#'   is evaluated over the unconstrained parameter space in a single vectorized
+#'   batch call, and the best candidate is used as the proposal centre. This is
+#'   typically faster than `"mle"` for low-dimensional models because all
+#'   candidates are evaluated in one C++ call to `build_design_and_c_batch`.
+#' - `n_sobol`: Number of Sobol candidates for `init = "random_search"`. Default
+#'   `NULL` auto-selects `2^(d+3)` (16 / 32 / 64 / 128 for d = 1..4). Powers
+#'   of 2 are optimal for Sobol sequences.
+#' - `mle_tol`: Relative convergence tolerance for the Nelder-Mead optimizer
+#'   used when `init = "mle"`. A high value (default `1e-3`) means we converge
+#'   only roughly — sufficient to get a good starting region.
+#' - `mle_maxit`: Maximum number of Nelder-Mead iterations (default `500`).
 #'
 #' @return An object of class `"bets"`.
 #' @export
@@ -73,7 +86,7 @@ bets <- function(y,
     }
     rb_eta
   } else {
-    freq > 1
+    sampler != "amis"
   }
 
   if (rao_blackwellize_eta && sampler == "amis") {
