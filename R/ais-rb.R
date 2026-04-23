@@ -217,7 +217,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
     if (do_time) timing$marglik <- timing$marglik + (proc.time()[3] - t0)
 
     # ---- Step 5: Weighting ----
-    t0 <- proc.time()[3]
+    if (do_time) t0 <- proc.time()[3]
     log_target <- log_ml + log_prior_theta_const
     log_w <- log_target - draws$log_density
     log_w[!is.finite(log_w)] <- -Inf
@@ -287,15 +287,13 @@ adaptive_is_rb <- function(y, model_components, ctrl,
 
   sigma2s <- posterior_scale[res_idx] / stats::rchisq(N_final, df = nu_n)
 
-  # Draw eta from MVN(mu_n, sigma^2 * Vn) using vectorised Cholesky.
-  # A small ridge is always added before chol() — it is negligible relative
-  # to the posterior variance but avoids the ~0.1 ms tryCatch overhead that
-  # would otherwise be paid N_final times.
-  ridge <- 1e-8 * diag(n_eta)
+  # Draw eta from MVN(mu_n, sigma^2 * Vn).
+  # Rn = L_M^{-1} (lower triangular), pre-computed in C++. The formula
+  # crossprod(Rn, z) = t(Rn) %*% z gives draws with covariance t(Rn)*Rn = Vn.
   etas <- matrix(0, nrow = N_final, ncol = n_eta)
   for (j in seq_len(N_final)) {
     idx <- res_idx[j]
-    R <- chol(as.matrix(ml_res$Vn[, , idx]) + ridge)   # upper-triangular Cholesky
+    R <- as.matrix(ml_res$Rn[, , idx])
     z <- stats::rnorm(n_eta)
     etas[j, ] <- ml_res$mu_n[, idx] + sqrt(sigma2s[j]) * crossprod(R, z)
   }

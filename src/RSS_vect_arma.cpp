@@ -62,13 +62,16 @@ List RSS_vect_arma(NumericVector yR,
   }
   
   // Loop over time
+  // Pre-allocate temporaries outside the loop to avoid N*L heap allocations
+  vec ft(N);
+  vec e(N);
   for (int t=0; t<L; t++) {
-    vec ft = l.col(t);
+    ft = l.col(t);
     if (trend) ft += phi % b.col(t);  
     if (seas)  ft += s.col(t);
     
     // compute residuals and update RSS
-    vec e = y[t] - ft;  
+    e = y[t] - ft;  
     if (return_residuals) {
       residuals.col(t) = e;
     }

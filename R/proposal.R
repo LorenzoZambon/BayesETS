@@ -173,41 +173,6 @@ init_joint_params <- function(y, model_components, theta_names, eta_df = 7) {
   list(mus = joint_mus, Sigma = Sigma_joint, df = eta_df)
 }
 
-# Compute profile RSS from normal-equation sufficient statistics.
-# Some seasonal / short-series designs are singular or very ill-conditioned,
-# so an exact solve(XtX, Xty) can fail even when the candidate is usable.
-# For initialization we only need a stable relative score, so we fall back to a
-# lightly regularized solve before declaring the candidate degenerate.
-profile_rss_from_suff_stats <- function(XtX, Xty, yty) {
-  XtX <- as.matrix(XtX)
-  Xty <- as.numeric(Xty)
-  n_eta <- nrow(XtX)
-  if (length(Xty) != n_eta || !is.finite(yty)) return(1e15)
-
-  eta_hat <- tryCatch(solve(XtX, Xty), error = function(e) NULL)
-
-  if (is.null(eta_hat)) {
-    diag_scale <- mean(diag(XtX))
-    if (!is.finite(diag_scale) || diag_scale <= 0) diag_scale <- 1.0
-
-    ridge_grid <- diag_scale * c(1e-10, 1e-8, 1e-6)
-    for (ridge in ridge_grid) {
-      eta_hat <- tryCatch(
-        solve(XtX + diag(ridge, n_eta), Xty),
-        error = function(e) NULL
-      )
-      if (!is.null(eta_hat)) break
-    }
-  }
-
-  if (is.null(eta_hat)) return(1e15)
-
-  rss <- yty - 2 * sum(Xty * eta_hat) + drop(crossprod(eta_hat, XtX %*% eta_hat))
-  if (!is.finite(rss)) return(1e15)
-
-  max(rss, 0)
-}
-
 ##############################################################################
 ### MLE-Based Initialization ###
 

@@ -93,13 +93,19 @@ List build_design_and_c_batch(NumericVector yR,
     vec fc(n_eta), lp_coeff(n_eta), new_coeff_l(n_eta), new_coeff_b(n_eta);
 
     for (int t = 0; t < L; t++) {
-      // Forecast coefficient: yhat_t = forecast_coeff' * eta + forecast_det
+      // Level + trend part of forecast — also used directly for state updates.
       fc = coeff_l;
       double fd = det_l;
       if (trend) {
         fc += ph * coeff_b;
         fd += ph * det_b;
       }
+      // lp_coeff = coeff_l + ph*coeff_b is now in fc (pre-seasonal).
+      // Capture it once here; avoids a redundant recomputation further down.
+      lp_coeff = fc;
+      double lp_det = fd;
+
+      // Add seasonal contribution to complete the full forecast vector.
       int sj = 0;
       if (seas) {
         sj = t % m;
@@ -115,34 +121,23 @@ List build_design_and_c_batch(NumericVector yR,
       Xtyi += fc * yt;
       ytyi += yt * yt;
 
-      // Error deterministic part for state update
-      double err_det = y(t) - fd;
-
-      // State updates (coefficients propagation)
-      lp_coeff = coeff_l;
-      double lp_det = det_l;
-      if (trend) {
-        lp_coeff += ph * coeff_b;
-        lp_det   += ph * det_b;
-      }
-
       // l_{t+1} = l_t + phi*b_t + alpha*e_t
       //         = (l_t + phi*b_t) + alpha*(y_t - forecast)
       // coeff: lp_coeff + alpha*(-fc) = lp_coeff - alpha*fc
       new_coeff_l = lp_coeff - al * fc;
-      double new_det_l = lp_det + al * err_det;
+      double new_det_l = lp_det + al * yt;
 
       double new_det_b = 0.0;
       if (trend) {
         // b_{t+1} = phi*b_t + beta*e_t
         new_coeff_b = ph * coeff_b - be * fc;
-        new_det_b = ph * det_b + be * err_det;
+        new_det_b = ph * det_b + be * yt;
       }
 
       if (seas) {
         // s_{j,t+m} = s_{j,t} + gamma*e_t (only for j = t%m)
         coeff_s.row(sj) -= ga * fc.t();
-        det_s(sj) = det_s(sj) + ga * err_det;
+        det_s(sj) = det_s(sj) + ga * yt;
       }
 
       coeff_l = new_coeff_l;
@@ -253,11 +248,11 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
   double eta0_V0inv_eta0 = dot(eta0, V0inv_eta0);
 
   // Only allocate posterior storage when the caller needs it
-  cube Vn_cube;
+  cube Rn_cube;  // L_M^{-1} per particle (lower triangular); t(Rn)*Rn = Vn = M^{-1}
   mat  mu_n_mat;
   vec  posterior_scale;
   if (return_posterior) {
-    Vn_cube.set_size(n_eta, n_eta, N);
+    Rn_cube.set_size(n_eta, n_eta, N);
     mu_n_mat.set_size(n_eta, N);
     posterior_scale.set_size(N);
   }
@@ -270,30 +265,35 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
     // M = V0inv + XtX  (posterior precision)
     mat M = V0inv + XtXi;
 
-    // Log determinant: log|M| needed regardless of return_posterior
-    // log|I + X*V0*X'| = log|M| + log|V0|
-    double log_det_M = log_det_sympd(M);
+    // Single lower Cholesky of M — yields log|M|, quadratic form, and
+    // (on the posterior path) posterior mean and MVN sampling factor.
+    mat L_M;
+    if (!arma::chol(L_M, M, "lower")) {
+      // M not positive definite: degenerate particle
+      log_ml(i) = -datum::inf;
+      if (return_posterior) posterior_scale(i) = datum::inf;
+      continue;
+    }
+
+    // log|I + X*V0*X'| = log|M| + log|V0|;  log|M| = 2 * sum(log diag(L_M))
+    double log_det_M = 2.0 * arma::sum(arma::log(L_M.diag()));
     double log_det_IpXVXt = log_det_M + log_det_V0;
 
-    // Quadratic form: r = y~ - X*eta0
-    // r'*(I+X*V0*X')^{-1}*r = rtr - Xtr' * M^{-1} * Xtr
+    // Quadratic form: Xtr' * M^{-1} * Xtr = ||L_M^{-1} * Xtr||^2
     double rtr = ytyi - 2.0 * dot(eta0, Xtyi) + dot(eta0, XtXi * eta0);
     vec Xtr = Xtyi - XtXi * eta0;
+    vec Lm_inv_Xtr = arma::solve(arma::trimatl(L_M), Xtr);
+    double quad_woodbury = arma::dot(Lm_inv_Xtr, Lm_inv_Xtr);
 
-    double quad_woodbury;
     if (return_posterior) {
-      // Full inverse needed for posterior draws: compute Vn once and reuse
-      mat Vn = inv_sympd(M);
-      quad_woodbury = dot(Xtr, Vn * Xtr);
-
-      // Posterior mean: mu_n = Vn * (V0inv*eta0 + Xty)
-      vec mu_n = Vn * (V0inv_eta0 + Xtyi);
-      Vn_cube.slice(i) = Vn;
+      // mu_n = M^{-1} * (V0inv*eta0 + Xty) via two triangular solves
+      vec rhs = V0inv_eta0 + Xtyi;
+      vec tmp = arma::solve(arma::trimatl(L_M), rhs);
+      vec mu_n = arma::solve(arma::trimatu(L_M.t()), tmp);
       mu_n_mat.col(i) = mu_n;
-    } else {
-      // Scoring path: solve M*w = Xtr directly — avoids forming the full inverse
-      vec w = arma::solve(M, Xtr, arma::solve_opts::likely_sympd);
-      quad_woodbury = dot(Xtr, w);
+      // Rn = L_M^{-1} (lower triangular). In R: crossprod(Rn, z) = t(Rn)*z
+      // gives draws with covariance t(Rn)*Rn = L_M^{-T}*L_M^{-1} = M^{-1} = Vn.
+      Rn_cube.slice(i) = arma::inv(arma::trimatl(L_M));
     }
 
     double quad = rtr - quad_woodbury;
@@ -319,7 +319,7 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
   if (return_posterior) {
     return List::create(
       _["log_marginal_lik"] = log_ml,
-      _["Vn"]               = Vn_cube,
+      _["Rn"]               = Rn_cube,
       _["mu_n"]             = mu_n_mat,
       _["posterior_scale"]  = posterior_scale
     );
