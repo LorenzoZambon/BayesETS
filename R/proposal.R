@@ -225,17 +225,14 @@ mle_rss_objective <- function(theta_unc, theta_names, phi_min, phi_max,
   design <- tryCatch(
     build_design_and_c_batch(
       yR = y_vec, trend = trend, seas = seas,
-      damped = damped, m = m, paramsR = theta_con
+      damped = damped, m = m, paramsR = theta_con,
+      compute_rss = TRUE
     ),
     error = function(e) NULL
   )
   if (is.null(design)) return(1e15)
 
-  XtX <- design$XtX[, , 1]
-  Xty <- design$Xty[, 1]
-  yty <- design$yty[1]
-
-  profile_rss_from_suff_stats(XtX, Xty, yty)
+  design$rss[[1]]
 }
 
 # Find the approximate MLE for theta by running Nelder-Mead, analytically
@@ -329,26 +326,20 @@ eval_rss_batch <- function(theta_unc_mat, theta_names, phi_min, phi_max,
                                                 phi_min, phi_max)
   theta_con <- trans$theta
 
-  # Helper: solve the OLS system for one design-matrix slot and return RSS.
-  # rss is clamped to 0 from below: a tiny negative value is floating-point
-  # cancellation indicating a near-perfect fit, not a degenerate case.
-  solve_rss_one <- function(XtX_i, Xty_i, yty_i) {
-    profile_rss_from_suff_stats(XtX_i, Xty_i, yty_i)
-  }
-
   # Fast path: evaluate all N candidates in a single C++ batch call.
+  # Profile RSS (with ridge fallback) is computed inside C++; no R-level
+  # solve() or tryCatch() needed per candidate.
   design <- tryCatch(
     build_design_and_c_batch(
       yR = y_vec, trend = trend, seas = seas,
-      damped = damped, m = m, paramsR = theta_con
+      damped = damped, m = m, paramsR = theta_con,
+      compute_rss = TRUE
     ),
     error = function(e) NULL
   )
 
   if (!is.null(design)) {
-    return(vapply(seq_len(n), function(i) {
-      solve_rss_one(design$XtX[, , i], design$Xty[, i], design$yty[i])
-    }, numeric(1)))
+    return(as.numeric(design$rss))
   }
 
   # Fallback: the batch call threw (one bad candidate can cause C++ to raise).
@@ -359,12 +350,13 @@ eval_rss_batch <- function(theta_unc_mat, theta_names, phi_min, phi_max,
       build_design_and_c_batch(
         yR = y_vec, trend = trend, seas = seas,
         damped = damped, m = m,
-        paramsR = theta_con[i, , drop = FALSE]
+        paramsR = theta_con[i, , drop = FALSE],
+        compute_rss = TRUE
       ),
       error = function(e) NULL
     )
     if (is.null(d_i)) return(1e15)
-    solve_rss_one(d_i$XtX[, , 1], d_i$Xty[, 1], d_i$yty[1])
+    d_i$rss[[1]]
   }, numeric(1))
 }
 
@@ -445,7 +437,7 @@ eval_rb_log_ml_batch <- function(theta_unc_mat, theta_names, phi_min, phi_max,
 }
 
 default_n_sobol <- function(d) {
-  as.integer(2L ^ (d + 3L))   # 16, 32, 64, 128 for d = 1..4
+  as.integer(2L ^ (d + 5L))   # 64, 128, 256, 512 for d = 1..4
 }
 
 # Find the best theta starting point(s) by evaluating a Sobol low-discrepancy
@@ -558,53 +550,343 @@ find_theta_random_search <- function(y, model_components, phi_min, phi_max,
   if (top_k == 1L) result[1L, ] else result
 }
 
-# Random-search single-component joint proposal initialization (for AIS).
-# Centers the theta part of the proposal at the best Sobol candidate; keeps
-# the heuristic covariance structure unchanged.
+# Compute score-based IS weights from a score vector.
+# For "rss"  scores, valid candidates have score < 1e15; weights are
+#   proportional to exp(-score / (2 * sigma2_hat)), a proper Gaussian likelihood.
+#   sigma2_hat is the median of valid scores (robust to outliers).
+# For "rb_marglik" scores, weights are obtained via the usual log-sum-exp trick.
+# Returns a normalised weight vector (length n_candidates).
+sobol_is_weights <- function(score_vec, score_type) {
+  n <- length(score_vec)
+  if (score_type == "rss") {
+    valid <- score_vec < 1e15 & is.finite(score_vec)
+    if (!any(valid)) return(rep(1 / n, n))
+    sigma2_hat <- pmax(stats::median(score_vec[valid]), 1e-10)
+    log_w <- ifelse(valid, -score_vec / (2 * sigma2_hat), -Inf)
+  } else {
+    finite_mask <- is.finite(score_vec)
+    if (!any(finite_mask)) return(rep(1 / n, n))
+    log_w <- ifelse(finite_mask, score_vec, -Inf)
+  }
+  # Numerically stable softmax
+  log_w <- log_w - max(log_w[is.finite(log_w)])
+  w <- exp(log_w)
+  w / sum(w)
+}
+
+# Compute weighted mean and *shrinkage-regularised* covariance for the theta
+# sub-block only, analogous to the adaptive update in AIS (update_joint_proposal).
+# Returns list(theta_mus_unc, Sigma_theta_unc).
+sobol_weighted_theta_params <- function(theta_unc_mat, w, min_var = 1e-6,
+                                        lambda_shr = 0.1) {
+  w_mu <- colSums(w * theta_unc_mat)          # weighted mean (length d)
+  centered <- sweep(theta_unc_mat, 2, w_mu, "-")
+  Sigma_w <- crossprod(centered * sqrt(w))    # d x d weighted scatter
+
+  # Shrinkage + min-diagonal regularisation (same recipe as update_joint_proposal)
+  diag_Sigma <- pmax(diag(Sigma_w), min_var)
+  Sigma_w <- (1 - lambda_shr) * Sigma_w
+  diag(Sigma_w) <- diag_Sigma
+
+  list(mu = w_mu, Sigma = Sigma_w)
+}
+
+# Sobol scan in the RB context — constructs the full Sobol-based IS sample
+# for a single model.  This is iteration 0 of RB-AIS under a uniform proposal
+# (Sobol+qlogis = uniform over the admissible constrained region = prior), so
+# IS weights reduce to the marginal likelihood: w_i ∝ p(y | θ_i).
+#
+# If the resulting ESS already reaches min_ess the AIS loop can be skipped
+# entirely.  Otherwise the IS-weighted mean and covariance seed the AIS
+# proposal (same as one AIS adaptive update step).
+#
+# Returns a list with:
+#   prop_params : IS-weighted theta proposal (mus, Sigma, df) for AIS start
+#   ess         : ESS = 1 / sum(w^2)  [max = n_pts]
+#   n_pts       : n_sobol + 1 (Sobol points + heuristic anchor)
+#   theta_unc   : n_pts x d unconstrained theta matrix
+#   theta_con   : n_pts x d constrained theta matrix
+#   w           : normalised IS weights (length n_pts)
+#   log_w       : log IS weights = log_ml + log_prior_const (for log_evidence)
+#   ml_res      : full marginal_likelihood_rb output for posterior reconstruction
+#   failed      : TRUE when the scan could not be completed
+sobol_scan_rb <- function(y, model_components, theta_names, phi_min, phi_max,
+                          n_sobol, eta0, V0, nu0, psi0, L,
+                          log_prior_theta_const, eta_df = 5L) {
+  d      <- length(theta_names)
+  m      <- stats::frequency(y)
+  trend  <- (model_components[[2]] == "A")
+  seas   <- (model_components[[3]] == "A")
+  damped <- (model_components[[4]] == "TRUE")
+  y_vec  <- as.numeric(y)
+
+  heuristic_row <- {
+    hr <- rep(0, d)
+    names(hr) <- theta_names
+    if ("phi" %in% theta_names) hr["phi"] <- 1.0
+    hr
+  }
+
+  # Generate Sobol points in (0,1)^d with digital-shift randomisation.
+  # qlogis maps them to unconstrained space where the marginal distributions
+  # are Logistic(0,1); after inv_logit the constrained coverage is uniform
+  # over the admissible ETS parameter region (= the prior support).
+  pts_01 <- tryCatch(
+    qrng::sobol(n_sobol, d = d, randomize = "digital.shift"),
+    error = function(e) NULL
+  )
+  unc_max <- 4
+  if (!is.null(pts_01)) {
+    if (d == 1L) pts_01 <- matrix(pts_01, ncol = 1)
+    theta_unc_sobol <- matrix(
+      pmin(pmax(stats::qlogis(pts_01), -unc_max), unc_max),
+      nrow = n_sobol, ncol = d
+    )
+    colnames(theta_unc_sobol) <- theta_names
+  } else {
+    theta_unc_sobol <- matrix(0, nrow = 0, ncol = d)
+    colnames(theta_unc_sobol) <- theta_names
+  }
+  # Append heuristic anchor so the result is never worse than the heuristic.
+  theta_unc_mat <- rbind(theta_unc_sobol, heuristic_row)
+  rownames(theta_unc_mat) <- NULL
+  n_pts <- nrow(theta_unc_mat)
+
+  # Transform to constrained space.
+  trans         <- transform_unconstrained_to_theta(theta_unc_mat, theta_names,
+                                                    phi_min, phi_max)
+  theta_con_mat <- trans$theta
+
+  # Build design matrices — single C++ batch call for all n_pts candidates.
+  design <- tryCatch(
+    build_design_and_c_batch(
+      yR = y_vec, trend = trend, seas = seas,
+      damped = damped, m = m, paramsR = theta_con_mat
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(design)) return(list(prop_params = NULL, ess = 0, failed = TRUE))
+
+  # Marginal likelihood evaluation — same C++ call as a single AIS-RB iteration.
+  ml_res <- tryCatch(
+    marginal_likelihood_rb(
+      XtX_cube = design$XtX, Xty_mat = design$Xty, yty_vec = design$yty,
+      eta0 = eta0, V0 = V0, nu0 = nu0, psi0 = psi0, L = L,
+      return_posterior = TRUE
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(ml_res)) return(list(prop_params = NULL, ess = 0, failed = TRUE))
+
+  log_ml <- as.numeric(ml_res$log_marginal_lik)
+  log_ml[!is.finite(log_ml)] <- -Inf
+
+  # IS weights.  Sobol proposal in constrained space = prior (both uniform over
+  # the admissible region), so:
+  #   w_i = p(y|θ_i) * p(θ_i) / q(θ_i) = p(y|θ_i) = exp(log_ml_i).
+  # We include log_prior_theta_const for numerical consistency with the AIS
+  # log_target convention; it is constant across particles and does not affect
+  # normalised weights or log_evidence (it cancels in both).
+  log_w <- log_ml + log_prior_theta_const
+  log_w[!is.finite(log_w)] <- -Inf
+
+  lw_max <- max(log_w[is.finite(log_w)])
+  if (!is.finite(lw_max)) {
+    warning("sobol_scan_rb: all marginal likelihoods are -Inf; returning failed")
+    return(list(prop_params = NULL, ess = 0, failed = TRUE))
+  }
+  w_raw <- exp(log_w - lw_max)
+  w_raw[!is.finite(w_raw)] <- 0
+  w   <- w_raw / sum(w_raw)
+  ess <- 1 / sum(w^2)
+  if (!is.finite(ess)) ess <- 0
+
+  # IS-weighted theta proposal — analogous to one AIS adaptive update step.
+  wp <- sobol_weighted_theta_params(theta_unc_mat, w)
+  names(wp$mu)                         <- theta_names
+  rownames(wp$Sigma) <- colnames(wp$Sigma) <- theta_names
+  prop_params <- list(mus = wp$mu, Sigma = wp$Sigma, df = as.integer(eta_df))
+
+  list(
+    prop_params = prop_params,
+    ess         = ess,
+    n_pts       = n_pts,
+    theta_unc   = theta_unc_mat,
+    theta_con   = theta_con_mat,
+    w           = w,
+    log_w       = log_w,
+    ml_res      = ml_res,
+    failed      = FALSE
+  )
+}
+
+# Random-search single-component joint proposal initialization for AIS.
+# "random_search_mean": best single Sobol candidate → mean; heuristic covariance.
+# "random_search":      IS-weighted mean *and* covariance from all Sobol candidates,
+#                       analogous to one adaptive update step in AIS. With more
+#                       Sobol points the weighted estimators are more accurate, so
+#                       larger n_sobol is expected to improve this variant.
 init_joint_params_random_search <- function(y, model_components, theta_names,
                                             eta_df, phi_min, phi_max, n_sobol,
+                                            weighted = FALSE,
                                             score = "rss", rb_scoring = NULL) {
-  base_params   <- init_joint_params(y, model_components, theta_names, eta_df)
-  theta_unc_hat <- find_theta_random_search(y, model_components,
-                                            phi_min, phi_max,
-                                            n_sobol = n_sobol, top_k = 1L,
-                                            score = score,
-                                            rb_scoring = rb_scoring)
-  base_params$mus[theta_names] <- theta_unc_hat
+  base_params <- init_joint_params(y, model_components, theta_names, eta_df)
+
+  if (!weighted) {
+    # --- random_search_mean: best single point ---
+    theta_unc_hat <- find_theta_random_search(y, model_components,
+                                              phi_min, phi_max,
+                                              n_sobol = n_sobol, top_k = 1L,
+                                              score = score,
+                                              rb_scoring = rb_scoring)
+    base_params$mus[theta_names] <- theta_unc_hat
+    return(base_params)
+  }
+
+  # --- random_search: IS-weighted mean + covariance ---
+  m      <- stats::frequency(y)
+  trend  <- (model_components[[2]] == "A")
+  seas   <- (model_components[[3]] == "A")
+  damped <- (model_components[[4]] == "TRUE")
+  y_vec  <- as.numeric(y)
+  d      <- length(theta_names)
+
+  if (is.null(n_sobol)) n_sobol <- default_n_sobol(d)
+
+  pts_01 <- tryCatch(
+    qrng::sobol(n_sobol, d = d, randomize = "digital.shift"),
+    error = function(e) NULL
+  )
+  if (is.null(pts_01)) {
+    warning("random_search (weighted): qrng::sobol() failed; using heuristic center")
+    return(base_params)
+  }
+
+  unc_max <- 4
+  if (d == 1L) pts_01 <- matrix(pts_01, ncol = 1)
+  theta_unc_mat <- matrix(
+    pmin(pmax(stats::qlogis(pts_01), -unc_max), unc_max),
+    nrow = n_sobol, ncol = d
+  )
+  colnames(theta_unc_mat) <- theta_names
+
+  # Append heuristic row as a safety anchor
+  heuristic_row <- base_params$mus[theta_names]
+  theta_unc_mat <- rbind(theta_unc_mat, heuristic_row)
+  rownames(theta_unc_mat) <- NULL
+
+  score_vec <- switch(score,
+    rss = eval_rss_batch(theta_unc_mat, theta_names, phi_min, phi_max,
+                         y_vec, trend, seas, damped, m),
+    rb_marglik = eval_rb_log_ml_batch(theta_unc_mat, theta_names, phi_min, phi_max,
+                                      y_vec, trend, seas, damped, m,
+                                      rb_scoring = rb_scoring)
+  )
+
+  w <- sobol_is_weights(score_vec, score)
+
+  wp <- sobol_weighted_theta_params(theta_unc_mat, w)
+  base_params$mus[theta_names] <- wp$mu
+
+  n_theta <- length(theta_names)
+  n_eta   <- nrow(base_params$Sigma) - n_theta
+  base_params$Sigma[seq_len(n_theta), seq_len(n_theta)] <- wp$Sigma
+
   base_params
 }
 
 # Random-search MVT mixture initialization for AMIS.
-# Finds the top-K Sobol candidates and uses them as the K component means,
-# giving genuinely diverse coverage rather than jittered copies of one point.
-# The shared Sigma is taken from the heuristic joint init (same as AIS path).
+# "random_search_mean" (weighted = FALSE): top-K Sobol candidates as K means,
+#   heuristic shared Sigma. Old behavior.
+# "random_search"      (weighted = TRUE):  IS-weighted mean + covariance from all
+#   Sobol candidates; components seeded from top-K means but the theta Sigma block
+#   is replaced by the full weighted estimator. Larger n_sobol improves estimates.
 init_mixture_params_random_search <- function(y, model_components, theta_names,
                                               eta_df, phi_min, phi_max,
-                                              n_sobol, K) {
-  base_params      <- init_joint_params(y, model_components, theta_names, eta_df)
-  top_k_unc        <- find_theta_random_search(y, model_components,
-                                               phi_min, phi_max,
-                                               n_sobol = n_sobol, top_k = K)
-  # top_k_unc is K x d_theta; embed into joint (theta + eta) parameter space
+                                              n_sobol, K, weighted = FALSE) {
+  base_params <- init_joint_params(y, model_components, theta_names, eta_df)
   param_names <- names(base_params$mus)
-  eta_names   <- setdiff(param_names, theta_names)
 
-  weights    <- rep(1 / K, K)
-  mus_list   <- vector("list", K)
-  Sigma_list <- vector("list", K)
+  if (!weighted) {
+    # --- random_search_mean: top-K best candidates as component means ---
+    top_k_unc <- find_theta_random_search(y, model_components,
+                                          phi_min, phi_max,
+                                          n_sobol = n_sobol, top_k = K)
+    Sigma_shared <- base_params$Sigma
+    mus_list   <- vector("list", K)
+    Sigma_list <- vector("list", K)
+    for (k in seq_len(K)) {
+      mu_k              <- base_params$mus
+      mu_k[theta_names] <- top_k_unc[k, ]
+      names(mu_k)       <- param_names
+      mus_list[[k]]     <- mu_k
+      Sigma_list[[k]]   <- Sigma_shared
+      rownames(Sigma_list[[k]]) <- colnames(Sigma_list[[k]]) <- param_names
+    }
+  } else {
+    # --- random_search: IS-weighted mean + covariance from all Sobol points ---
+    m      <- stats::frequency(y)
+    trend  <- (model_components[[2]] == "A")
+    seas   <- (model_components[[3]] == "A")
+    damped <- (model_components[[4]] == "TRUE")
+    y_vec  <- as.numeric(y)
+    d      <- length(theta_names)
 
-  for (k in seq_len(K)) {
-    mu_k                  <- base_params$mus
-    mu_k[theta_names]     <- top_k_unc[k, ]
-    names(mu_k)           <- param_names
-    mus_list[[k]]         <- mu_k
-    Sigma_list[[k]]       <- base_params$Sigma
-    rownames(Sigma_list[[k]]) <- colnames(Sigma_list[[k]]) <- param_names
+    if (is.null(n_sobol)) n_sobol <- default_n_sobol(d)
+
+    pts_01 <- tryCatch(
+      qrng::sobol(n_sobol, d = d, randomize = "digital.shift"),
+      error = function(e) NULL
+    )
+    heuristic_row <- base_params$mus[theta_names]
+
+    if (is.null(pts_01)) {
+      warning("random_search (weighted mixture): qrng::sobol() failed; using heuristic")
+      top_k_unc <- matrix(rep(heuristic_row, K), nrow = K, byrow = TRUE)
+      colnames(top_k_unc) <- theta_names
+      Sigma_shared <- base_params$Sigma
+    } else {
+      unc_max <- 4
+      if (d == 1L) pts_01 <- matrix(pts_01, ncol = 1)
+      theta_unc_mat <- matrix(
+        pmin(pmax(stats::qlogis(pts_01), -unc_max), unc_max),
+        nrow = n_sobol, ncol = d
+      )
+      colnames(theta_unc_mat) <- theta_names
+      theta_unc_mat <- rbind(theta_unc_mat, heuristic_row)
+      rownames(theta_unc_mat) <- NULL
+
+      score_vec <- eval_rss_batch(theta_unc_mat, theta_names, phi_min, phi_max,
+                                  y_vec, trend, seas, damped, m)
+      w     <- sobol_is_weights(score_vec, "rss")
+      wp    <- sobol_weighted_theta_params(theta_unc_mat, w)
+
+      # Weighted global mean; top-K peaks as per-component means
+      best_idx  <- order(score_vec)[seq_len(K)]
+      top_k_unc <- theta_unc_mat[best_idx, , drop = FALSE]
+      rownames(top_k_unc) <- NULL
+
+      # Replace theta block of Sigma with IS-weighted estimator
+      Sigma_shared <- base_params$Sigma
+      n_theta      <- length(theta_names)
+      Sigma_shared[seq_len(n_theta), seq_len(n_theta)] <- wp$Sigma
+    }
+
+    mus_list   <- vector("list", K)
+    Sigma_list <- vector("list", K)
+    for (k in seq_len(K)) {
+      mu_k              <- base_params$mus
+      mu_k[theta_names] <- top_k_unc[k, ]
+      names(mu_k)       <- param_names
+      mus_list[[k]]     <- mu_k
+      Sigma_list[[k]]   <- Sigma_shared
+      rownames(Sigma_list[[k]]) <- colnames(Sigma_list[[k]]) <- param_names
+    }
   }
 
   list(
     K          = K,
-    weights    = weights,
+    weights    = rep(1 / K, K),
     mus_list   = mus_list,
     Sigma_list = Sigma_list,
     df         = base_params$df

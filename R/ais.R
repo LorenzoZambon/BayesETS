@@ -5,14 +5,15 @@ adaptive_is <- function(y, model_components, ctrl,
                         return_pointwise = FALSE,
                         use_nmig = FALSE) {
   N_iter_max <- ctrl$N_iter_max
-  N_draw     <- ctrl$N_draw
-  N_draw_max <- ctrl$N_draw_max
-  N_final    <- ctrl$N_final
+  N_draw_raw  <- ctrl$N_draw
+  N_draw_max  <- ctrl$N_draw_max
+  N_final_raw <- ctrl$N_final
+  min_ess_raw <- ctrl$min_ess
+  n_sobol_raw <- ctrl$n_sobol
   nu0        <- ctrl$nu0
   psi0       <- ctrl$psi0
   phi_min    <- ctrl$phi_min
   phi_max    <- ctrl$phi_max
-  min_ess    <- ctrl$min_ess
   eta_df     <- ctrl$eta_df
   eta_df_incr_per_iter <- ctrl$eta_df_incr_per_iter
   lr         <- ctrl$lr
@@ -32,6 +33,12 @@ adaptive_is <- function(y, model_components, ctrl,
   damped <- (model_components[[4]] == "TRUE")
   theta_names <- c("alpha", if (trend) c("beta", if (damped) "phi"), if (seas) "gamma")
 
+  n_theta <- length(theta_names)
+  N_draw  <- resolve_by_d(N_draw_raw,  n_theta)
+  N_final <- resolve_by_d(N_final_raw, n_theta)
+  min_ess <- if (is.null(min_ess_raw)) N_final / 2 else resolve_by_d(min_ess_raw, n_theta)
+  n_sobol <- if (is.null(n_sobol_raw)) N_draw else resolve_by_d(n_sobol_raw, n_theta)
+
   prop_params <- switch(ctrl$init,
     mle = init_joint_params_mle(
       y, model_components, theta_names, eta_df,
@@ -39,7 +46,11 @@ adaptive_is <- function(y, model_components, ctrl,
     ),
     random_search = init_joint_params_random_search(
       y, model_components, theta_names, eta_df,
-      phi_min, phi_max, ctrl$n_sobol
+      phi_min, phi_max, n_sobol, weighted = TRUE
+    ),
+    random_search_mean = init_joint_params_random_search(
+      y, model_components, theta_names, eta_df,
+      phi_min, phi_max, n_sobol, weighted = FALSE
     ),
     init_joint_params(y, model_components, theta_names, eta_df)  # heuristic
   )

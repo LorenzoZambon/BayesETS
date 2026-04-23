@@ -31,16 +31,19 @@
 #'   `em_iter` (EM iterations per update, default 5),
 #'   `jitter_scale` (initialization jitter, default 0.5).
 #' - `init`: Proposal initialization strategy: `"random_search"` (default),
-#'   `"heuristic"`, or `"mle"`. When `"mle"`, Nelder-Mead optimization is run first
-#'   to find an approximate MLE for theta (analytically integrating out eta at
-#'   each evaluation). When `"random_search"`, a Sobol low-discrepancy sequence
-#'   is evaluated over the unconstrained parameter space in a single vectorized
-#'   batch call, and the best candidate is used as the proposal centre. This is
-#'   typically faster than `"mle"` for low-dimensional models because all
-#'   candidates are evaluated in one C++ call to `build_design_and_c_batch`.
-#' - `n_sobol`: Number of Sobol candidates for `init = "random_search"`. Default
-#'   `NULL` auto-selects `2^(d+3)` (16 / 32 / 64 / 128 for d = 1..4). Powers
-#'   of 2 are optimal for Sobol sequences.
+#'   `"random_search_mean"`, `"heuristic"`, or `"mle"`.
+#'   * `"random_search"`: evaluates a Sobol low-discrepancy sequence and uses
+#'     IS-weighted mean **and covariance** computed from all candidates (analogous
+#'     to one adaptive step in AIS). With more Sobol points the weighted estimators
+#'     become more accurate, so larger `n_sobol` is generally beneficial here.
+#'   * `"random_search_mean"`: previous default — picks the single best candidate
+#'     as the proposal mean and keeps the heuristic covariance unchanged.
+#'   * `"mle"`: runs Nelder-Mead to find an approximate MLE for theta
+#'     (analytically integrating out eta at each evaluation).
+#' - `n_sobol`: Number of Sobol candidates for `init = "random_search"` or
+#'   `"random_search_mean"`. Default `NULL` resolves to `N_draw` (same budget
+#'   as one AIS iteration), which already scales with problem dimension through
+#'   `N_draw`. Powers of 2 are optimal for Sobol sequences.
 #' - `mle_tol`: Relative convergence tolerance for the Nelder-Mead optimizer
 #'   used when `init = "mle"`. A high value (default `1e-3`) means we converge
 #'   only roughly — sufficient to get a good starting region.

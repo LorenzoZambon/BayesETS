@@ -45,16 +45,21 @@ and \code{FALSE} for AMIS fits, where Rao-Blackwellization is not implemented.
 \code{em_iter} (EM iterations per update, default 5),
 \code{jitter_scale} (initialization jitter, default 0.5).
 \item \code{init}: Proposal initialization strategy: \code{"random_search"} (default),
-\code{"heuristic"}, or \code{"mle"}. When \code{"mle"}, Nelder-Mead optimization is run first
-to find an approximate MLE for theta (analytically integrating out eta at
-each evaluation). When \code{"random_search"}, a Sobol low-discrepancy sequence
-is evaluated over the unconstrained parameter space in a single vectorized
-batch call, and the best candidate is used as the proposal centre. This is
-typically faster than \code{"mle"} for low-dimensional models because all
-candidates are evaluated in one C++ call to \code{build_design_and_c_batch}.
-\item \code{n_sobol}: Number of Sobol candidates for \code{init = "random_search"}. Default
-\code{NULL} auto-selects \code{2^(d+3)} (16 / 32 / 64 / 128 for d = 1..4). Powers
-of 2 are optimal for Sobol sequences.
+\code{"random_search_mean"}, \code{"heuristic"}, or \code{"mle"}.
+\itemize{
+\item \code{"random_search"}: evaluates a Sobol low-discrepancy sequence and uses
+IS-weighted mean \strong{and covariance} computed from all candidates (analogous
+to one adaptive step in AIS). With more Sobol points the weighted estimators
+become more accurate, so larger \code{n_sobol} is generally beneficial here.
+\item \code{"random_search_mean"}: previous default — picks the single best candidate
+as the proposal mean and keeps the heuristic covariance unchanged.
+\item \code{"mle"}: runs Nelder-Mead to find an approximate MLE for theta
+(analytically integrating out eta at each evaluation).
+}
+\item \code{n_sobol}: Number of Sobol candidates for \code{init = "random_search"} or
+\code{"random_search_mean"}. Default \code{NULL} resolves to \code{N_draw} (same budget
+as one AIS iteration), which already scales with problem dimension through
+\code{N_draw}. Powers of 2 are optimal for Sobol sequences.
 \item \code{mle_tol}: Relative convergence tolerance for the Nelder-Mead optimizer
 used when \code{init = "mle"}. A high value (default \code{1e-3}) means we converge
 only roughly — sufficient to get a good starting region.

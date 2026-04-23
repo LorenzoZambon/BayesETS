@@ -30,8 +30,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // build_design_and_c_batch
-List build_design_and_c_batch(NumericVector yR, bool trend, bool seas, bool damped, int m, NumericMatrix paramsR);
-RcppExport SEXP _BETS_build_design_and_c_batch(SEXP yRSEXP, SEXP trendSEXP, SEXP seasSEXP, SEXP dampedSEXP, SEXP mSEXP, SEXP paramsRSEXP) {
+List build_design_and_c_batch(NumericVector yR, bool trend, bool seas, bool damped, int m, NumericMatrix paramsR, bool compute_rss);
+RcppExport SEXP _BETS_build_design_and_c_batch(SEXP yRSEXP, SEXP trendSEXP, SEXP seasSEXP, SEXP dampedSEXP, SEXP mSEXP, SEXP paramsRSEXP, SEXP compute_rssSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -41,13 +41,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type damped(dampedSEXP);
     Rcpp::traits::input_parameter< int >::type m(mSEXP);
     Rcpp::traits::input_parameter< NumericMatrix >::type paramsR(paramsRSEXP);
-    rcpp_result_gen = Rcpp::wrap(build_design_and_c_batch(yR, trend, seas, damped, m, paramsR));
+    Rcpp::traits::input_parameter< bool >::type compute_rss(compute_rssSEXP);
+    rcpp_result_gen = Rcpp::wrap(build_design_and_c_batch(yR, trend, seas, damped, m, paramsR, compute_rss));
     return rcpp_result_gen;
 END_RCPP
 }
 // marginal_likelihood_rb
-List marginal_likelihood_rb(arma::cube XtX_cube, arma::mat Xty_mat, arma::vec yty_vec, arma::vec eta0, arma::mat V0, double nu0, double psi0, int L);
-RcppExport SEXP _BETS_marginal_likelihood_rb(SEXP XtX_cubeSEXP, SEXP Xty_matSEXP, SEXP yty_vecSEXP, SEXP eta0SEXP, SEXP V0SEXP, SEXP nu0SEXP, SEXP psi0SEXP, SEXP LSEXP) {
+List marginal_likelihood_rb(arma::cube XtX_cube, arma::mat Xty_mat, arma::vec yty_vec, arma::vec eta0, arma::mat V0, double nu0, double psi0, int L, bool return_posterior);
+RcppExport SEXP _BETS_marginal_likelihood_rb(SEXP XtX_cubeSEXP, SEXP Xty_matSEXP, SEXP yty_vecSEXP, SEXP eta0SEXP, SEXP V0SEXP, SEXP nu0SEXP, SEXP psi0SEXP, SEXP LSEXP, SEXP return_posteriorSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -59,15 +60,16 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type nu0(nu0SEXP);
     Rcpp::traits::input_parameter< double >::type psi0(psi0SEXP);
     Rcpp::traits::input_parameter< int >::type L(LSEXP);
-    rcpp_result_gen = Rcpp::wrap(marginal_likelihood_rb(XtX_cube, Xty_mat, yty_vec, eta0, V0, nu0, psi0, L));
+    Rcpp::traits::input_parameter< bool >::type return_posterior(return_posteriorSEXP);
+    rcpp_result_gen = Rcpp::wrap(marginal_likelihood_rb(XtX_cube, Xty_mat, yty_vec, eta0, V0, nu0, psi0, L, return_posterior));
     return rcpp_result_gen;
 END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
     {"_BETS_RSS_vect_arma", (DL_FUNC) &_BETS_RSS_vect_arma, 8},
-    {"_BETS_build_design_and_c_batch", (DL_FUNC) &_BETS_build_design_and_c_batch, 6},
-    {"_BETS_marginal_likelihood_rb", (DL_FUNC) &_BETS_marginal_likelihood_rb, 8},
+    {"_BETS_build_design_and_c_batch", (DL_FUNC) &_BETS_build_design_and_c_batch, 7},
+    {"_BETS_marginal_likelihood_rb", (DL_FUNC) &_BETS_marginal_likelihood_rb, 9},
     {NULL, NULL, 0}
 };
 

@@ -1,12 +1,29 @@
+# Resolve a dimension-indexed control parameter.
+# param may be:
+#   - a scalar  → used for all theta dimensions
+#   - an unnamed vector → param[min(d, length)] (last value repeated for d > length)
+#   - a named vector with names "1","2","3","4" → look up by d
+# Always returns a single integer.
+resolve_by_d <- function(param, d) {
+  if (length(param) == 1L) return(as.integer(param))
+  if (!is.null(names(param))) {
+    key <- as.character(d)
+    if (key %in% names(param)) return(as.integer(param[[key]]))
+  }
+  idx <- min(as.integer(d), length(param))
+  as.integer(param[[idx]])
+}
+
 bets_control_defaults <- function(rao_blackwellize_eta = TRUE, freq = 1) {
-  # Use the smaller budget when the proposal lives in a low-dimensional space:
-  # either RB is active (eta integrated out) or freq = 1 (no seasonal states).
-  low_dim <- rao_blackwellize_eta || freq == 1
+  # N_draw and N_final are dimension-indexed vectors (index = theta dim d = 1..4).
+  # Rule: N_draw = 256 * 2^(d-1); N_final = min(1000, 200 * 2^(d-1))
+  # Pass a scalar to override uniformly; pass a length-4 vector for per-d control.
+  # Both are resolved to a scalar inside each sampler via resolve_by_d(param, d).
   list(
     N_iter_max = 30,
-    N_draw = if (low_dim) 1000L else 5000L,
+    N_draw     = c(256L, 512L, 1024L, 2048L),
     N_draw_max = 1e5,
-    N_final = if (low_dim) 500L else 1000L,
+    N_final    = c(200L, 400L, 800L, 1000L),
     nu0 = 3,
     psi0 = NULL,
     phi_min = 0.8,
@@ -50,8 +67,10 @@ resolve_bets_control <- function(control = list(), rao_blackwellize_eta = FALSE,
   control <- control[setdiff(names(control), bets_keys)]
 
   out <- utils::modifyList(defaults, control)
-  if (is.null(out$min_ess)) out$min_ess <- out$N_final / 2
-  out$init <- match.arg(out$init, c("heuristic", "mle", "random_search"))
+  # min_ess and n_sobol are resolved per-model inside each sampler (after d is known):
+  #   min_ess defaults to N_final[d] / 2
+  #   n_sobol defaults to N_draw[d] for random_search / random_search_mean
+  out$init <- match.arg(out$init, c("heuristic", "mle", "random_search", "random_search_mean"))
   out
 }
 

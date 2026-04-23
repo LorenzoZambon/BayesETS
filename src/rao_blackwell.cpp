@@ -22,7 +22,8 @@ List build_design_and_c_batch(NumericVector yR,
                               bool seas,
                               bool damped,
                               int m,
-                              NumericMatrix paramsR) {
+                              NumericMatrix paramsR,
+                              bool compute_rss = false) {
 
   vec y(yR.begin(), yR.size(), false);
   mat params(paramsR.begin(), paramsR.nrow(), paramsR.ncol(), false);
@@ -49,10 +50,12 @@ List build_design_and_c_batch(NumericVector yR,
     gamma_vec = params.col(col_idx);
   }
 
-  // Output sufficient statistics
+  // Output sufficient statistics (and optionally profile RSS)
   cube XtX(n_eta, n_eta, N, fill::zeros);
   mat  Xty(n_eta, N, fill::zeros);
   vec  yty(N, fill::zeros);
+  vec  rss_vec;  // allocated only when compute_rss = true
+  if (compute_rss) rss_vec.set_size(N);
 
   int s_offset = 1 + (trend ? 1 : 0);
 
@@ -86,9 +89,12 @@ List build_design_and_c_batch(NumericVector yR,
     vec Xtyi(n_eta, fill::zeros);
     double ytyi = 0.0;
 
+    // Preallocate temporaries outside the t-loop to avoid N*L heap allocations
+    vec fc(n_eta), lp_coeff(n_eta), new_coeff_l(n_eta), new_coeff_b(n_eta);
+
     for (int t = 0; t < L; t++) {
       // Forecast coefficient: yhat_t = forecast_coeff' * eta + forecast_det
-      vec fc = coeff_l;
+      fc = coeff_l;
       double fd = det_l;
       if (trend) {
         fc += ph * coeff_b;
@@ -113,7 +119,7 @@ List build_design_and_c_batch(NumericVector yR,
       double err_det = y(t) - fd;
 
       // State updates (coefficients propagation)
-      vec lp_coeff = coeff_l;
+      lp_coeff = coeff_l;
       double lp_det = det_l;
       if (trend) {
         lp_coeff += ph * coeff_b;
@@ -123,10 +129,9 @@ List build_design_and_c_batch(NumericVector yR,
       // l_{t+1} = l_t + phi*b_t + alpha*e_t
       //         = (l_t + phi*b_t) + alpha*(y_t - forecast)
       // coeff: lp_coeff + alpha*(-fc) = lp_coeff - alpha*fc
-      vec new_coeff_l = lp_coeff - al * fc;
+      new_coeff_l = lp_coeff - al * fc;
       double new_det_l = lp_det + al * err_det;
 
-      vec new_coeff_b(n_eta, fill::zeros);
       double new_det_b = 0.0;
       if (trend) {
         // b_{t+1} = phi*b_t + beta*e_t
@@ -136,8 +141,7 @@ List build_design_and_c_batch(NumericVector yR,
 
       if (seas) {
         // s_{j,t+m} = s_{j,t} + gamma*e_t (only for j = t%m)
-        vec new_cs = coeff_s.row(sj).t() - ga * fc;
-        coeff_s.row(sj) = new_cs.t();
+        coeff_s.row(sj) -= ga * fc.t();
         det_s(sj) = det_s(sj) + ga * err_det;
       }
 
@@ -152,8 +156,47 @@ List build_design_and_c_batch(NumericVector yR,
     XtX.slice(i) = XtXi;
     Xty.col(i) = Xtyi;
     yty(i) = ytyi;
+
+    if (compute_rss) {
+      // Profile RSS: RSS = yty - Xty' * eta_hat  (eta_hat = XtX \ Xty)
+      // Mirror the R fallback: try Cholesky first, then ridge regularization.
+      vec eta_hat;
+      bool ok = arma::solve(eta_hat, XtXi, Xtyi,
+                            arma::solve_opts::likely_sympd +
+                            arma::solve_opts::no_approx);
+      if (!ok) {
+        double diag_scale = arma::trace(XtXi) / n_eta;
+        if (!std::isfinite(diag_scale) || diag_scale <= 0.0) diag_scale = 1.0;
+        double ridges[3] = {diag_scale * 1e-10, diag_scale * 1e-8, diag_scale * 1e-6};
+        mat XtXr = XtXi;
+        for (int r = 0; r < 3 && !ok; r++) {
+          XtXr = XtXi;
+          XtXr.diag() += ridges[r];
+          ok = arma::solve(eta_hat, XtXr, Xtyi,
+                           arma::solve_opts::likely_sympd +
+                           arma::solve_opts::no_approx);
+        }
+      }
+      if (!ok) {
+        rss_vec(i) = 1e15;
+      } else {
+        double rss = ytyi - 2.0 * arma::dot(Xtyi, eta_hat)
+                          + arma::dot(eta_hat, XtXi * eta_hat);
+        rss_vec(i) = (rss > 0.0) ? rss : 0.0;
+      }
+    }
   }
 
+  if (compute_rss) {
+    return List::create(
+      _["XtX"] = XtX,
+      _["Xty"] = Xty,
+      _["yty"] = yty,
+      _["rss"] = rss_vec,
+      _["n_eta"] = n_eta,
+      _["L"] = L
+    );
+  }
   return List::create(
     _["XtX"] = XtX,
     _["Xty"] = Xty,
@@ -186,7 +229,8 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
                             arma::mat  V0,
                             double nu0,
                             double psi0,
-                            int L) {
+                            int L,
+                            bool return_posterior = false) {
   int N = yty_vec.n_elem;
   int n_eta = eta0.n_elem;
 
@@ -202,54 +246,58 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
   double lgamma_half_nu_L = lgamma(half_nu_L);
   double lgamma_half_nu   = lgamma(half_nu);
   double half_L_log_nu_pi = 0.5 * L * log(nu0 * datum::pi);
-  double half_L_log_psi0_nu0 = 0.5 * L * log(psi0 / nu0);
+  double L_log_psi0_nu0 = L * log(psi0 / nu0);
 
   // Precompute V0inv * eta0
   vec V0inv_eta0 = V0inv * eta0;
   double eta0_V0inv_eta0 = dot(eta0, V0inv_eta0);
 
-  // Posterior covariance/mean matrices needed for reconstruction
-  cube Vn_cube(n_eta, n_eta, N);
-  mat  mu_n_mat(n_eta, N);
-  vec  posterior_scale(N);  // psi_n = psi0 + quad for sigma^2 posterior
+  // Only allocate posterior storage when the caller needs it
+  cube Vn_cube;
+  mat  mu_n_mat;
+  vec  posterior_scale;
+  if (return_posterior) {
+    Vn_cube.set_size(n_eta, n_eta, N);
+    mu_n_mat.set_size(n_eta, N);
+    posterior_scale.set_size(N);
+  }
 
   for (int i = 0; i < N; i++) {
     mat XtXi = XtX_cube.slice(i);
     vec Xtyi = Xty_mat.col(i);
     double ytyi = yty_vec(i);
 
-    // Vn = (V0inv + XtX)^{-1}  using Cholesky for stability
+    // M = V0inv + XtX  (posterior precision)
     mat M = V0inv + XtXi;
-    mat Vn = inv_sympd(M);
 
-    // Posterior mean: mu_n = Vn * (V0inv*eta0 + Xty)
-    vec rhs = V0inv_eta0 + Xtyi;
-    vec mu_n = Vn * rhs;
-
-    Vn_cube.slice(i) = Vn;
-    mu_n_mat.col(i) = mu_n;
-
-    // Log determinant: log|I + X*V0*X'| = log|V0^{-1} + X'X| + log|V0|
-    //                                    = log|M| + log|V0|
-    //                                    = log|M| - log|V0inv|
+    // Log determinant: log|M| needed regardless of return_posterior
+    // log|I + X*V0*X'| = log|M| + log|V0|
     double log_det_M = log_det_sympd(M);
     double log_det_IpXVXt = log_det_M + log_det_V0;
 
     // Quadratic form: r = y~ - X*eta0
-    // r'*(I+X*V0*X')^{-1}*r = rtr - Xtr' * Vn * Xtr
-    // rtr = yty - 2*eta0'*Xty + eta0'*XtX*eta0
+    // r'*(I+X*V0*X')^{-1}*r = rtr - Xtr' * M^{-1} * Xtr
     double rtr = ytyi - 2.0 * dot(eta0, Xtyi) + dot(eta0, XtXi * eta0);
-
-    // Xtr = Xty - XtX*eta0
     vec Xtr = Xtyi - XtXi * eta0;
-    double quad_woodbury = dot(Xtr, Vn * Xtr);
+
+    double quad_woodbury;
+    if (return_posterior) {
+      // Full inverse needed for posterior draws: compute Vn once and reuse
+      mat Vn = inv_sympd(M);
+      quad_woodbury = dot(Xtr, Vn * Xtr);
+
+      // Posterior mean: mu_n = Vn * (V0inv*eta0 + Xty)
+      vec mu_n = Vn * (V0inv_eta0 + Xtyi);
+      Vn_cube.slice(i) = Vn;
+      mu_n_mat.col(i) = mu_n;
+    } else {
+      // Scoring path: solve M*w = Xtr directly — avoids forming the full inverse
+      vec w = arma::solve(M, Xtr, arma::solve_opts::likely_sympd);
+      quad_woodbury = dot(Xtr, w);
+    }
+
     double quad = rtr - quad_woodbury;
-
-    // Ensure numerical stability
     if (quad < 0.0) quad = 0.0;
-
-    // Store posterior scale for sigma^2 sampling
-    posterior_scale(i) = psi0 + quad;
 
     // Marginal Student-t log-likelihood
     // log p(y|theta) = lgamma((nu0+L)/2) - lgamma(nu0/2)
@@ -257,19 +305,24 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
     //                - 0.5 * log|Sigma_y|
     //                - (nu0+L)/2 * log(1 + quad/psi0)
     // where log|Sigma_y| = L*log(psi0/nu0) + log|I+X*V0*X'|
-
-    double log_det_Sigma_y = half_L_log_psi0_nu0 + log_det_IpXVXt;
-
+    double log_det_Sigma_y = L_log_psi0_nu0 + log_det_IpXVXt;
     log_ml(i) = lgamma_half_nu_L - lgamma_half_nu
               - half_L_log_nu_pi
               - 0.5 * log_det_Sigma_y
               - half_nu_L * log(1.0 + quad / psi0);
+
+    if (return_posterior) {
+      posterior_scale(i) = psi0 + quad;
+    }
   }
 
-  return List::create(
-    _["log_marginal_lik"] = log_ml,
-    _["Vn"] = Vn_cube,
-    _["mu_n"] = mu_n_mat,
-    _["posterior_scale"] = posterior_scale
-  );
+  if (return_posterior) {
+    return List::create(
+      _["log_marginal_lik"] = log_ml,
+      _["Vn"]               = Vn_cube,
+      _["mu_n"]             = mu_n_mat,
+      _["posterior_scale"]  = posterior_scale
+    );
+  }
+  return List::create(_["log_marginal_lik"] = log_ml);
 }

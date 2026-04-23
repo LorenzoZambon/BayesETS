@@ -9,14 +9,15 @@ adaptive_is_rb <- function(y, model_components, ctrl,
                            return_pointwise = FALSE,
                            use_nmig = FALSE) {
   N_iter_max <- ctrl$N_iter_max
-  N_draw     <- ctrl$N_draw
+  N_draw_raw <- ctrl$N_draw      # may be a scalar or length-4 vector; resolved per d below
   N_draw_max <- ctrl$N_draw_max
-  N_final    <- ctrl$N_final
+  N_final_raw <- ctrl$N_final   # same
+  min_ess_raw <- ctrl$min_ess   # NULL or scalar or vector; resolved per d below
+  n_sobol_raw <- ctrl$n_sobol   # NULL (→ N_draw[d]) or scalar or vector
   nu0        <- ctrl$nu0
   psi0       <- ctrl$psi0
   phi_min    <- ctrl$phi_min
   phi_max    <- ctrl$phi_max
-  min_ess    <- ctrl$min_ess
   eta_df     <- ctrl$eta_df
   eta_df_incr_per_iter <- ctrl$eta_df_incr_per_iter
   lr         <- ctrl$lr
@@ -33,6 +34,13 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   damped <- (model_components[[4]] == "TRUE")
   theta_names <- c("alpha", if (trend) c("beta", if (damped) "phi"), if (seas) "gamma")
   n_theta <- length(theta_names)
+
+  # Resolve dimension-dependent scalars now that d = n_theta is known.
+  N_draw  <- resolve_by_d(N_draw_raw,  n_theta)
+  N_final <- resolve_by_d(N_final_raw, n_theta)
+  min_ess <- if (is.null(min_ess_raw)) N_final / 2 else resolve_by_d(min_ess_raw, n_theta)
+  # n_sobol = N_draw by default (cost-equivalent to one AIS iteration)
+  n_sobol <- if (is.null(n_sobol_raw)) N_draw else resolve_by_d(n_sobol_raw, n_theta)
 
   # ---- Set up eta prior ----
   # Use the existing heuristic for the initial states
@@ -98,36 +106,71 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   }
   eta0 <- eta0_cpp
 
-  # ---- Initialize theta-only proposal ----
-  # Start from the joint init but extract theta portion only
-  joint_init <- switch(ctrl$init,
-    mle = init_joint_params_mle(
-      y, model_components, theta_names, eta_df,
-      phi_min, phi_max, ctrl$mle_tol, ctrl$mle_maxit
-    ),
-    random_search = init_joint_params_random_search(
-      y, model_components, theta_names, eta_df,
-      phi_min, phi_max, ctrl$n_sobol,
-      score = "rb_marglik",
-      rb_scoring = list(
-        eta0 = eta0,
-        V0 = V0,
-        nu0 = nu0,
-        psi0 = psi0,
-        L = L
-      )
-    ),
-    init_joint_params(y, model_components, theta_names, eta_df)  # heuristic
-  )
-  theta_prop_params <- list(
-    mus   = joint_init$mus[theta_names],
-    Sigma = joint_init$Sigma[theta_names, theta_names, drop = FALSE],
-    df    = joint_init$df
-  )
-
+  # log_prior_theta_const: used both in sobol_scan_rb and in the AIS loop.
   dummy_theta <- matrix(0, nrow = 1, ncol = n_theta)
   colnames(dummy_theta) <- theta_names
   log_prior_theta_const <- log_prior_theta_uniform(dummy_theta, phi_min, phi_max)[1]
+
+  # ---- Initialize theta-only proposal ----
+  # For random_search: run sobol_scan_rb (iteration 0 under uniform/prior proposal).
+  # If ESS already reaches min_ess the AIS loop is skipped entirely.
+  # For random_search_mean: best single Sobol candidate as mean, heuristic Sigma.
+  sobol_scan <- NULL
+
+  if (ctrl$init == "random_search") {
+    sobol_scan <- sobol_scan_rb(
+      y, model_components, theta_names, phi_min, phi_max,
+      n_sobol               = n_sobol,
+      eta0                  = eta0, V0 = V0, nu0 = nu0, psi0 = psi0, L = L,
+      log_prior_theta_const = log_prior_theta_const,
+      eta_df                = eta_df
+    )
+    theta_prop_params <- if (!sobol_scan$failed) {
+      sobol_scan$prop_params
+    } else {
+      ji <- init_joint_params(y, model_components, theta_names, eta_df)
+      list(mus   = ji$mus[theta_names],
+           Sigma = ji$Sigma[theta_names, theta_names, drop = FALSE],
+           df    = ji$df)
+    }
+
+  } else if (ctrl$init == "random_search_mean") {
+    joint_init <- init_joint_params_random_search(
+      y, model_components, theta_names, eta_df,
+      phi_min, phi_max, ctrl$n_sobol, weighted = FALSE,
+      score      = "rb_marglik",
+      rb_scoring = list(eta0 = eta0, V0 = V0, nu0 = nu0, psi0 = psi0, L = L)
+    )
+    theta_prop_params <- list(
+      mus   = joint_init$mus[theta_names],
+      Sigma = joint_init$Sigma[theta_names, theta_names, drop = FALSE],
+      df    = joint_init$df
+    )
+
+  } else if (ctrl$init == "mle") {
+    joint_init <- init_joint_params_mle(
+      y, model_components, theta_names, eta_df,
+      phi_min, phi_max, ctrl$mle_tol, ctrl$mle_maxit
+    )
+    theta_prop_params <- list(
+      mus   = joint_init$mus[theta_names],
+      Sigma = joint_init$Sigma[theta_names, theta_names, drop = FALSE],
+      df    = joint_init$df
+    )
+
+  } else {  # heuristic
+    joint_init <- init_joint_params(y, model_components, theta_names, eta_df)
+    theta_prop_params <- list(
+      mus   = joint_init$mus[theta_names],
+      Sigma = joint_init$Sigma[theta_names, theta_names, drop = FALSE],
+      df    = joint_init$df
+    )
+  }
+
+  # ---- Sobol early exit ----
+  # If the Sobol scan already achieved the target ESS, skip the AIS loop.
+  sobol_early_exit <- !is.null(sobol_scan) && !sobol_scan$failed &&
+                      sobol_scan$ess >= min_ess
 
   prev_ess <- 0
   timing <- list(draw = 0, design = 0, marglik = 0, weight = 0, update = 0, post = 0)
@@ -135,6 +178,8 @@ adaptive_is_rb <- function(y, model_components, ctrl,
 
   y_vec  <- as.numeric(y)
   R_chol <- chol(theta_prop_params$Sigma)   # proposal Cholesky; recomputed after each Sigma update
+
+  if (!sobol_early_exit) {
 
   for (iter in seq_len(N_iter_max)) {
     # ---- Step 2: Draw theta particles ----
@@ -165,7 +210,8 @@ adaptive_is_rb <- function(y, model_components, ctrl,
       V0       = V0,
       nu0      = nu0,
       psi0     = psi0,
-      L        = L
+      L        = L,
+      return_posterior = TRUE
     )
     log_ml <- as.numeric(ml_res$log_marginal_lik)
     if (do_time) timing$marglik <- timing$marglik + (proc.time()[3] - t0)
@@ -210,12 +256,30 @@ adaptive_is_rb <- function(y, model_components, ctrl,
     R_chol <- chol(theta_prop_params$Sigma)   # recompute once after Sigma update
     if (do_time) timing$update <- timing$update + (proc.time()[3] - t0)
     prev_ess <- ess
+  }  # end AIS loop
+
+  }  # end if (!sobol_early_exit)
+
+  # Unify particles and weights from whichever path was taken.
+  if (sobol_early_exit) {
+    w      <- sobol_scan$w
+    log_w  <- sobol_scan$log_w
+    ess    <- sobol_scan$ess
+    iter   <- 0L
+    ml_res <- sobol_scan$ml_res
+    theta_particles <- sobol_scan$theta_con
+    N_particles     <- sobol_scan$n_pts
+    if (verbose >= 2)
+      cat(sprintf("\n\nRB-AIS: Sobol early exit (ESS = %.1f)\n", ess))
+  } else {
+    theta_particles <- draws$theta
+    N_particles     <- N_draw
   }
 
   # ---- Step 6: Posterior Reconstruction ----
   if (do_time) t0 <- proc.time()[3]
-  res_idx <- sample(N_draw, size = N_final, replace = TRUE, prob = w)
-  thetas <- draws$theta[res_idx, , drop = FALSE]
+  res_idx <- sample(N_particles, size = N_final, replace = TRUE, prob = w)
+  thetas <- theta_particles[res_idx, , drop = FALSE]
 
   # For each resampled theta, draw sigma^2 and then eta
   posterior_scale <- as.numeric(ml_res$posterior_scale)
@@ -231,7 +295,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   etas <- matrix(0, nrow = N_final, ncol = n_eta)
   for (j in seq_len(N_final)) {
     idx <- res_idx[j]
-    R <- chol(ml_res$Vn[, , idx] + ridge)   # upper-triangular Cholesky
+    R <- chol(as.matrix(ml_res$Vn[, , idx]) + ridge)   # upper-triangular Cholesky
     z <- stats::rnorm(n_eta)
     etas[j, ] <- ml_res$mu_n[, idx] + sqrt(sigma2s[j]) * crossprod(R, z)
   }

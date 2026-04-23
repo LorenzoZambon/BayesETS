@@ -5,11 +5,11 @@ RSS_vect_arma <- function(yR, trend, seas, damped, m, init_statesR, paramsR, ret
     .Call(`_BETS_RSS_vect_arma`, yR, trend, seas, damped, m, init_statesR, paramsR, return_residuals)
 }
 
-build_design_and_c_batch <- function(yR, trend, seas, damped, m, paramsR) {
-    .Call(`_BETS_build_design_and_c_batch`, yR, trend, seas, damped, m, paramsR)
+build_design_and_c_batch <- function(yR, trend, seas, damped, m, paramsR, compute_rss = FALSE) {
+    .Call(`_BETS_build_design_and_c_batch`, yR, trend, seas, damped, m, paramsR, compute_rss)
 }
 
-marginal_likelihood_rb <- function(XtX_cube, Xty_mat, yty_vec, eta0, V0, nu0, psi0, L) {
-    .Call(`_BETS_marginal_likelihood_rb`, XtX_cube, Xty_mat, yty_vec, eta0, V0, nu0, psi0, L)
+marginal_likelihood_rb <- function(XtX_cube, Xty_mat, yty_vec, eta0, V0, nu0, psi0, L, return_posterior = FALSE) {
+    .Call(`_BETS_marginal_likelihood_rb`, XtX_cube, Xty_mat, yty_vec, eta0, V0, nu0, psi0, L, return_posterior)
 }
 
