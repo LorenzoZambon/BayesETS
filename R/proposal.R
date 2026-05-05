@@ -2,7 +2,6 @@
 ### Transformation Functions (Theta <-> Unconstrained) ###
 
 # Logit and Inverse Logit
-logit <- function(p) log(p / (1 - p))
 inv_logit <- stats::plogis   # compiled-C equivalent of 1/(1+exp(-x))
 
 # Transform Unconstrained -> Constrained
@@ -50,39 +49,6 @@ transform_unconstrained_to_theta <- function(theta_unc, param_names, phi_min, ph
   }
 
   list(theta = theta, log_jac = log_jac)
-}
-
-# Transform Constrained -> Unconstrained
-transform_theta_to_unconstrained <- function(theta, phi_min, phi_max) {
-  theta_unc <- theta
-  eps <- 1e-6 # stability
-
-  if ("alpha" %in% colnames(theta)) {
-    val <- pmin(pmax(theta[, "alpha"], eps), 1 - eps)
-    theta_unc[, "alpha"] <- logit(val)
-  }
-
-  if ("beta" %in% colnames(theta)) {
-    # Reconstruct ratio: beta / alpha
-    val <- theta[, "beta"] / pmax(theta[, "alpha"], eps)
-    val <- pmin(pmax(val, eps), 1 - eps)
-    theta_unc[, "beta"] <- logit(val)
-  }
-
-  if ("gamma" %in% colnames(theta)) {
-    # Reconstruct ratio: gamma / (1 - alpha)
-    val <- theta[, "gamma"] / pmax(1 - theta[, "alpha"], eps)
-    val <- pmin(pmax(val, eps), 1 - eps)
-    theta_unc[, "gamma"] <- logit(val)
-  }
-
-  if ("phi" %in% colnames(theta)) {
-    val <- (theta[, "phi"] - phi_min) / (phi_max - phi_min)
-    val <- pmin(pmax(val, eps), 1 - eps)
-    theta_unc[, "phi"] <- logit(val)
-  }
-
-  theta_unc
 }
 
 
@@ -378,22 +344,4 @@ log_prior_theta_uniform <- function(theta_samp, phi_min, phi_max) {
   }
 
   lp
-}
-
-##############################################################################
-### NMIG (Normal-Mixture Inverse Gamma) Spike-and-Slab Prior ###
-
-#' Log-density of a spike-and-slab mixture of two zero-mean Normals.
-#'
-#' @param x     Numeric vector of values.
-#' @param v_spike Variance of the spike component (small, e.g. 1e-5).
-#' @param v_slab  Variance of the slab component (large, e.g. 10).
-#' @param w      Prior mixing weight on the slab (0 < w < 1).
-#' @return Numeric vector of log-densities, same length as \code{x}.
-log_prior_nmig <- function(x, v_spike, v_slab, w) {
-  log_comp_spike <- log(1 - w) + stats::dnorm(x, mean = 0, sd = sqrt(v_spike), log = TRUE)
-  log_comp_slab  <- log(w)     + stats::dnorm(x, mean = 0, sd = sqrt(v_slab),  log = TRUE)
-  # Numerically stable log-sum-exp over the two components
-  max_log <- pmax(log_comp_spike, log_comp_slab)
-  max_log + log(exp(log_comp_spike - max_log) + exp(log_comp_slab - max_log))
 }

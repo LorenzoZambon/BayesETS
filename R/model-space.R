@@ -39,10 +39,6 @@ bets_control_defaults <- function(freq = 1) {
     verbose = 0,
     n_traj_forecast = 1000,
     prior_models = NULL,
-    K_mix = 3,
-    ridge_eps = 1e-4,
-    em_iter = 5,
-    jitter_scale = 0.5,
     n_sobol = NULL
   )
 }
