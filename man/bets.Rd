@@ -30,40 +30,12 @@ then combines models with BMA or stacking.
 The \code{control} argument accepts a named list with the following entries:
 \itemize{
 \item \code{method}: Combination strategy: \code{"bma"} (Bayesian Model Average, default),
-\code{"stacking"}, or \code{"nmig"} (spike-and-slab model selection).
-\item \code{sampler}: Importance sampling algorithm: \code{"ais"} (single MVT proposal,
-default) or \code{"amis"} (Adaptive Multiple Importance Sampling with a
-mixture of MVT proposals and recycled historical samples).
-\item \code{rao_blackwellize_eta}: Logical; if \code{TRUE}, analytically integrates out
-the initial states (Rao-Blackwellization) instead of sampling them.
-Only supported with \code{sampler = "ais"}. Defaults to \code{TRUE} for AIS fits
-and \code{FALSE} for AMIS fits, where Rao-Blackwellization is not implemented.
-\item NMIG-specific: \code{v_spike}, \code{v_slab}, \code{w_nmig}.
+or \code{"stacking"}.
 \item \code{prior_models}: optional prior model probabilities for BMA.
-\item AMIS-specific: \code{K_mix} (number of mixture components, default 3),
-\code{ridge_eps} (ridge regularization, default 1e-4),
-\code{em_iter} (EM iterations per update, default 5),
-\code{jitter_scale} (initialization jitter, default 0.5).
-\item \code{init}: Proposal initialization strategy: \code{"random_search"} (default),
-\code{"random_search_mean"}, \code{"heuristic"}, or \code{"mle"}.
-\itemize{
-\item \code{"random_search"}: evaluates a Sobol low-discrepancy sequence and uses
-IS-weighted mean \strong{and covariance} computed from all candidates (analogous
-to one adaptive step in AIS). With more Sobol points the weighted estimators
-become more accurate, so larger \code{n_sobol} is generally beneficial here.
-\item \code{"random_search_mean"}: previous default — picks the single best candidate
-as the proposal mean and keeps the heuristic covariance unchanged.
-\item \code{"mle"}: runs Nelder-Mead to find an approximate MLE for theta
-(analytically integrating out eta at each evaluation).
-}
-\item \code{n_sobol}: Number of Sobol candidates for \code{init = "random_search"} or
-\code{"random_search_mean"}. Default \code{NULL} resolves to \code{N_draw} (same budget
+\item \code{n_sobol}: Number of Sobol candidates used to build the proposal distribution.
+Default \code{NULL} resolves to \code{N_draw} (same budget
 as one AIS iteration), which already scales with problem dimension through
 \code{N_draw}. Powers of 2 are optimal for Sobol sequences.
-\item \code{mle_tol}: Relative convergence tolerance for the Nelder-Mead optimizer
-used when \code{init = "mle"}. A high value (default \code{1e-3}) means we converge
-only roughly — sufficient to get a good starting region.
-\item \code{mle_maxit}: Maximum number of Nelder-Mead iterations (default \code{500}).
 }
 }
 }

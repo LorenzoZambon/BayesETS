@@ -14,7 +14,7 @@ resolve_by_d <- function(param, d) {
   as.integer(param[[idx]])
 }
 
-bets_control_defaults <- function(rao_blackwellize_eta = TRUE, freq = 1) {
+bets_control_defaults <- function(freq = 1) {
   # N_draw and N_final are dimension-indexed vectors (index = theta dim d = 1..4).
   # Rule: N_draw = 256 * 2^(d-1); N_final = min(1000, 200 * 2^(d-1))
   # Pass a scalar to override uniformly; pass a length-4 vector for per-d control.
@@ -38,28 +38,22 @@ bets_control_defaults <- function(rao_blackwellize_eta = TRUE, freq = 1) {
     factor_inflate_Sigma = 1,
     verbose = 0,
     n_traj_forecast = 1000,
-    v_spike = 1e-5,
-    v_slab = 10.0,
-    w_nmig = 0.5,
     prior_models = NULL,
     K_mix = 3,
     ridge_eps = 1e-4,
     em_iter = 5,
     jitter_scale = 0.5,
-    init = "random_search",
-    mle_tol = 1e-3,
-    mle_maxit = 500L,
     n_sobol = NULL
   )
 }
 
-resolve_bets_control <- function(control = list(), rao_blackwellize_eta = FALSE, freq = 1) {
-  defaults <- bets_control_defaults(rao_blackwellize_eta, freq)
+resolve_bets_control <- function(control = list(), freq = 1) {
+  defaults <- bets_control_defaults(freq)
   if (!is.list(control)) {
     stop("control must be a named list")
   }
-  # method, sampler, rao_blackwellize_eta live in control but are not tuning params
-  bets_keys <- c("method", "sampler", "rao_blackwellize_eta")
+  # method, sampler live in control but are not tuning params
+  bets_keys <- c("method", "sampler")
   unknown <- setdiff(names(control), c(names(defaults), bets_keys))
   if (length(unknown) > 0) {
     stop(sprintf("Unknown control entries: %s", paste(unknown, collapse = ", ")))
@@ -69,8 +63,7 @@ resolve_bets_control <- function(control = list(), rao_blackwellize_eta = FALSE,
   out <- utils::modifyList(defaults, control)
   # min_ess and n_sobol are resolved per-model inside each sampler (after d is known):
   #   min_ess defaults to N_final[d] / 2
-  #   n_sobol defaults to N_draw[d] for random_search / random_search_mean
-  out$init <- match.arg(out$init, c("heuristic", "mle", "random_search", "random_search_mean"))
+  #   n_sobol defaults to N_draw[d]
   out
 }
 

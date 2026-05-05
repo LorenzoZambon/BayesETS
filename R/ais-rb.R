@@ -6,8 +6,7 @@
 ##############################################################################
 
 adaptive_is_rb <- function(y, model_components, ctrl,
-                           return_pointwise = FALSE,
-                           use_nmig = FALSE) {
+                           return_pointwise = FALSE) {
   N_iter_max <- ctrl$N_iter_max
   N_draw_raw <- ctrl$N_draw      # may be a scalar or length-4 vector; resolved per d below
   N_draw_max <- ctrl$N_draw_max
@@ -112,65 +111,27 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   log_prior_theta_const <- log_prior_theta_uniform(dummy_theta, phi_min, phi_max)[1]
 
   # ---- Initialize theta-only proposal ----
-  # For random_search: run sobol_scan_rb (iteration 0 under uniform/prior proposal).
+  # Run sobol_scan_rb (iteration 0 under uniform/prior proposal).
   # If ESS already reaches min_ess the AIS loop is skipped entirely.
-  # For random_search_mean: best single Sobol candidate as mean, heuristic Sigma.
-  sobol_scan <- NULL
-
-  if (ctrl$init == "random_search") {
-    sobol_scan <- sobol_scan_rb(
-      y, model_components, theta_names, phi_min, phi_max,
-      n_sobol               = n_sobol,
-      eta0                  = eta0, V0 = V0, nu0 = nu0, psi0 = psi0, L = L,
-      log_prior_theta_const = log_prior_theta_const,
-      eta_df                = eta_df
-    )
-    theta_prop_params <- if (!sobol_scan$failed) {
-      sobol_scan$prop_params
-    } else {
-      ji <- init_joint_params(y, model_components, theta_names, eta_df)
-      list(mus   = ji$mus[theta_names],
-           Sigma = ji$Sigma[theta_names, theta_names, drop = FALSE],
-           df    = ji$df)
-    }
-
-  } else if (ctrl$init == "random_search_mean") {
-    joint_init <- init_joint_params_random_search(
-      y, model_components, theta_names, eta_df,
-      phi_min, phi_max, ctrl$n_sobol, weighted = FALSE,
-      score      = "rb_marglik",
-      rb_scoring = list(eta0 = eta0, V0 = V0, nu0 = nu0, psi0 = psi0, L = L)
-    )
-    theta_prop_params <- list(
-      mus   = joint_init$mus[theta_names],
-      Sigma = joint_init$Sigma[theta_names, theta_names, drop = FALSE],
-      df    = joint_init$df
-    )
-
-  } else if (ctrl$init == "mle") {
-    joint_init <- init_joint_params_mle(
-      y, model_components, theta_names, eta_df,
-      phi_min, phi_max, ctrl$mle_tol, ctrl$mle_maxit
-    )
-    theta_prop_params <- list(
-      mus   = joint_init$mus[theta_names],
-      Sigma = joint_init$Sigma[theta_names, theta_names, drop = FALSE],
-      df    = joint_init$df
-    )
-
-  } else {  # heuristic
-    joint_init <- init_joint_params(y, model_components, theta_names, eta_df)
-    theta_prop_params <- list(
-      mus   = joint_init$mus[theta_names],
-      Sigma = joint_init$Sigma[theta_names, theta_names, drop = FALSE],
-      df    = joint_init$df
-    )
+  sobol_scan <- sobol_scan_rb(
+    y, model_components, theta_names, phi_min, phi_max,
+    n_sobol               = n_sobol,
+    eta0                  = eta0, V0 = V0, nu0 = nu0, psi0 = psi0, L = L,
+    log_prior_theta_const = log_prior_theta_const,
+    eta_df                = eta_df
+  )
+  theta_prop_params <- if (!sobol_scan$failed) {
+    sobol_scan$prop_params
+  } else {
+    ji <- init_joint_params(y, model_components, theta_names, eta_df)
+    list(mus   = ji$mus[theta_names],
+         Sigma = ji$Sigma[theta_names, theta_names, drop = FALSE],
+         df    = ji$df)
   }
 
   # ---- Sobol early exit ----
   # If the Sobol scan already achieved the target ESS, skip the AIS loop.
-  sobol_early_exit <- !is.null(sobol_scan) && !sobol_scan$failed &&
-                      sobol_scan$ess >= min_ess
+  sobol_early_exit <- !sobol_scan$failed && sobol_scan$ess >= min_ess
 
   prev_ess <- 0
   timing <- list(draw = 0, design = 0, marglik = 0, weight = 0, update = 0, post = 0)

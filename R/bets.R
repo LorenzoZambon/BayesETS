@@ -16,38 +16,12 @@
 #' The `control` argument accepts a named list with the following entries:
 #'
 #' - `method`: Combination strategy: `"bma"` (Bayesian Model Average, default),
-#'   `"stacking"`, or `"nmig"` (spike-and-slab model selection).
-#' - `sampler`: Importance sampling algorithm: `"ais"` (single MVT proposal,
-#'   default) or `"amis"` (Adaptive Multiple Importance Sampling with a
-#'   mixture of MVT proposals and recycled historical samples).
-#' - `rao_blackwellize_eta`: Logical; if `TRUE`, analytically integrates out
-#'   the initial states (Rao-Blackwellization) instead of sampling them.
-#'   Only supported with `sampler = "ais"`. Defaults to `TRUE` for AIS fits
-#'   and `FALSE` for AMIS fits, where Rao-Blackwellization is not implemented.
-#' - NMIG-specific: `v_spike`, `v_slab`, `w_nmig`.
+#'   or `"stacking"`.
 #' - `prior_models`: optional prior model probabilities for BMA.
-#' - AMIS-specific: `K_mix` (number of mixture components, default 3),
-#'   `ridge_eps` (ridge regularization, default 1e-4),
-#'   `em_iter` (EM iterations per update, default 5),
-#'   `jitter_scale` (initialization jitter, default 0.5).
-#' - `init`: Proposal initialization strategy: `"random_search"` (default),
-#'   `"random_search_mean"`, `"heuristic"`, or `"mle"`.
-#'   * `"random_search"`: evaluates a Sobol low-discrepancy sequence and uses
-#'     IS-weighted mean **and covariance** computed from all candidates (analogous
-#'     to one adaptive step in AIS). With more Sobol points the weighted estimators
-#'     become more accurate, so larger `n_sobol` is generally beneficial here.
-#'   * `"random_search_mean"`: previous default — picks the single best candidate
-#'     as the proposal mean and keeps the heuristic covariance unchanged.
-#'   * `"mle"`: runs Nelder-Mead to find an approximate MLE for theta
-#'     (analytically integrating out eta at each evaluation).
-#' - `n_sobol`: Number of Sobol candidates for `init = "random_search"` or
-#'   `"random_search_mean"`. Default `NULL` resolves to `N_draw` (same budget
+#' - `n_sobol`: Number of Sobol candidates used to build the proposal distribution. 
+#'   Default `NULL` resolves to `N_draw` (same budget
 #'   as one AIS iteration), which already scales with problem dimension through
 #'   `N_draw`. Powers of 2 are optimal for Sobol sequences.
-#' - `mle_tol`: Relative convergence tolerance for the Nelder-Mead optimizer
-#'   used when `init = "mle"`. A high value (default `1e-3`) means we converge
-#'   only roughly — sufficient to get a good starting region.
-#' - `mle_maxit`: Maximum number of Nelder-Mead iterations (default `500`).
 #'
 #' @return An object of class `"bets"`.
 #' @export
@@ -71,41 +45,19 @@ bets <- function(y,
   freq <- stats::frequency(y)
 
   method <- if (!is.null(control$method)) {
-    match.arg(control$method, c("bma", "stacking", "nmig"))
+    match.arg(control$method, c("bma", "stacking"))
   } else {
     "bma"
   }
 
-  sampler <- if (!is.null(control$sampler)) {
-    match.arg(control$sampler, c("ais", "amis"))
-  } else {
-    "ais"
-  }
-
-  rao_blackwellize_eta <- if (!is.null(control$rao_blackwellize_eta)) {
-    rb_eta <- control$rao_blackwellize_eta
-    if (!is.logical(rb_eta) || length(rb_eta) != 1 || is.na(rb_eta)) {
-      stop("control$rao_blackwellize_eta must be TRUE or FALSE")
-    }
-    rb_eta
-  } else {
-    sampler != "amis"
-  }
-
-  if (rao_blackwellize_eta && sampler == "amis") {
-    stop("Rao-Blackwellized AMIS is not implemented. Please use AIS.")
-  }
-
-  ctrl <- resolve_bets_control(control, rao_blackwellize_eta, freq)
+  ctrl <- resolve_bets_control(control, freq)
   model_components <- coerce_model_components(model, stats::frequency(y), additive.only = TRUE)  # multiplicative models not supported yet
 
   fit <- fit_bets_models(
     y = y,
     model_components = model_components,
     ctrl = ctrl,
-    method = method,
-    sampler = sampler,
-    rao_blackwellize_eta = rao_blackwellize_eta
+    method = method
   )
 
   structure(
@@ -113,9 +65,6 @@ bets <- function(y,
       y = y,
       fit = fit,
       model_components = model_components,
-      method = method,
-      sampler = sampler,
-      rao_blackwellize_eta = rao_blackwellize_eta,
       control = ctrl,
       call = match.call()
     ),
@@ -128,14 +77,9 @@ print.bets <- function(x, ...) {
   cat("BETS model fit\n")
   cat(sprintf("  length(y): %d\n", length(x$y)))
   cat(sprintf("  frequency: %d\n", stats::frequency(x$y)))
-  cat(sprintf("  sampler: %s\n", x$sampler))
-  cat(sprintf("  combination: %s\n", x$method))
+  cat(sprintf("  combination: %s\n", x$control$method))
 
-  mc <- if (x$method == "nmig") {
-    lapply(x$fit$results, `[[`, "model_components")
-  } else {
-    x$model_components
-  }
+  mc <- x$model_components
   labels <- vapply(mc, ets_label, character(1))
   for (i in seq_along(labels)) {
     cat(sprintf("  %-5s weight: %.3f\n", labels[i], x$fit$model_weights[i]))
