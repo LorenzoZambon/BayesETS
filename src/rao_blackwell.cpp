@@ -22,8 +22,7 @@ List build_design_and_c_batch(NumericVector yR,
                               bool seas,
                               bool damped,
                               int m,
-                              NumericMatrix paramsR,
-                              bool compute_rss = false) {
+                              NumericMatrix paramsR) {
 
   vec y(yR.begin(), yR.size(), false);
   mat params(paramsR.begin(), paramsR.nrow(), paramsR.ncol(), false);
@@ -50,12 +49,10 @@ List build_design_and_c_batch(NumericVector yR,
     gamma_vec = params.col(col_idx);
   }
 
-  // Output sufficient statistics (and optionally profile RSS)
+  // Output sufficient statistics
   cube XtX(n_eta, n_eta, N, fill::zeros);
   mat  Xty(n_eta, N, fill::zeros);
   vec  yty(N, fill::zeros);
-  vec  rss_vec;  // allocated only when compute_rss = true
-  if (compute_rss) rss_vec.set_size(N);
 
   int s_offset = 1 + (trend ? 1 : 0);
 
@@ -152,46 +149,8 @@ List build_design_and_c_batch(NumericVector yR,
     Xty.col(i) = Xtyi;
     yty(i) = ytyi;
 
-    if (compute_rss) {
-      // Profile RSS: RSS = yty - Xty' * eta_hat  (eta_hat = XtX \ Xty)
-      // Mirror the R fallback: try Cholesky first, then ridge regularization.
-      vec eta_hat;
-      bool ok = arma::solve(eta_hat, XtXi, Xtyi,
-                            arma::solve_opts::likely_sympd +
-                            arma::solve_opts::no_approx);
-      if (!ok) {
-        double diag_scale = arma::trace(XtXi) / n_eta;
-        if (!std::isfinite(diag_scale) || diag_scale <= 0.0) diag_scale = 1.0;
-        double ridges[3] = {diag_scale * 1e-10, diag_scale * 1e-8, diag_scale * 1e-6};
-        mat XtXr = XtXi;
-        for (int r = 0; r < 3 && !ok; r++) {
-          XtXr = XtXi;
-          XtXr.diag() += ridges[r];
-          ok = arma::solve(eta_hat, XtXr, Xtyi,
-                           arma::solve_opts::likely_sympd +
-                           arma::solve_opts::no_approx);
-        }
-      }
-      if (!ok) {
-        rss_vec(i) = 1e15;
-      } else {
-        double rss = ytyi - 2.0 * arma::dot(Xtyi, eta_hat)
-                          + arma::dot(eta_hat, XtXi * eta_hat);
-        rss_vec(i) = (rss > 0.0) ? rss : 0.0;
-      }
-    }
   }
 
-  if (compute_rss) {
-    return List::create(
-      _["XtX"] = XtX,
-      _["Xty"] = Xty,
-      _["yty"] = yty,
-      _["rss"] = rss_vec,
-      _["n_eta"] = n_eta,
-      _["L"] = L
-    );
-  }
   return List::create(
     _["XtX"] = XtX,
     _["Xty"] = Xty,
@@ -245,7 +204,6 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
 
   // Precompute V0inv * eta0
   vec V0inv_eta0 = V0inv * eta0;
-  double eta0_V0inv_eta0 = dot(eta0, V0inv_eta0);
 
   // Only allocate posterior storage when the caller needs it
   cube Rn_cube;  // L_M^{-1} per particle (lower triangular); t(Rn)*Rn = Vn = M^{-1}

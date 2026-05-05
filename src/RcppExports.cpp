@@ -30,8 +30,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // build_design_and_c_batch
-List build_design_and_c_batch(NumericVector yR, bool trend, bool seas, bool damped, int m, NumericMatrix paramsR, bool compute_rss);
-RcppExport SEXP _BETS_build_design_and_c_batch(SEXP yRSEXP, SEXP trendSEXP, SEXP seasSEXP, SEXP dampedSEXP, SEXP mSEXP, SEXP paramsRSEXP, SEXP compute_rssSEXP) {
+List build_design_and_c_batch(NumericVector yR, bool trend, bool seas, bool damped, int m, NumericMatrix paramsR);
+RcppExport SEXP _BETS_build_design_and_c_batch(SEXP yRSEXP, SEXP trendSEXP, SEXP seasSEXP, SEXP dampedSEXP, SEXP mSEXP, SEXP paramsRSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -41,8 +41,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type damped(dampedSEXP);
     Rcpp::traits::input_parameter< int >::type m(mSEXP);
     Rcpp::traits::input_parameter< NumericMatrix >::type paramsR(paramsRSEXP);
-    Rcpp::traits::input_parameter< bool >::type compute_rss(compute_rssSEXP);
-    rcpp_result_gen = Rcpp::wrap(build_design_and_c_batch(yR, trend, seas, damped, m, paramsR, compute_rss));
+    rcpp_result_gen = Rcpp::wrap(build_design_and_c_batch(yR, trend, seas, damped, m, paramsR));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -68,7 +67,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_BETS_RSS_vect_arma", (DL_FUNC) &_BETS_RSS_vect_arma, 8},
-    {"_BETS_build_design_and_c_batch", (DL_FUNC) &_BETS_build_design_and_c_batch, 7},
+    {"_BETS_build_design_and_c_batch", (DL_FUNC) &_BETS_build_design_and_c_batch, 6},
     {"_BETS_marginal_likelihood_rb", (DL_FUNC) &_BETS_marginal_likelihood_rb, 9},
     {NULL, NULL, 0}
 };
