@@ -4,7 +4,6 @@
 #'
 #' @keywords internal
 #' @importFrom Rcpp evalCpp
-#' @importFrom forecast forecast
 #' @importFrom stats predict
 #' @importFrom qrng sobol
 #' @useDynLib BETS, .registration = TRUE

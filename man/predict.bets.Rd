@@ -21,7 +21,7 @@ since BETS forecasts forward from the end of the training series.}
 \item{...}{Unused.}
 }
 \value{
-An object of class \code{c("bets_forecast", "forecast")}.
+An object of class \code{bets_forecast}.
 }
 \description{
 Produces forecast distributions from a fitted \code{bets} object using

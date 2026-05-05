@@ -11,7 +11,7 @@
 #' @param n_traj Number of simulated trajectories.
 #' @param ... Unused.
 #'
-#' @return An object of class `c("bets_forecast", "forecast")`.
+#' @return An object of class `bets_forecast`.
 #' @export
 predict.bets <- function(object, newdata = NULL, h = 10, level = c(80, 95),
                          n_traj = NULL, ...) {
@@ -63,19 +63,6 @@ predict.bets <- function(object, newdata = NULL, h = 10, level = c(80, 95),
     x      = x,
     series = deparse(substitute(object))
   )
-  class(out) <- c("bets_forecast", "forecast")
+  class(out) <- "bets_forecast"
   out
-}
-
-#' Forecast from a BETS model
-#'
-#' Thin wrapper around [predict.bets()] that satisfies the
-#' `forecast::forecast` generic so BETS objects work seamlessly with the
-#' `forecast` ecosystem.
-#'
-#' @inheritParams predict.bets
-#' @inherit predict.bets return
-#' @export
-forecast.bets <- function(object, h = 10, level = c(80, 95), n_traj = NULL, ...) {
-  predict(object, h = h, level = level, n_traj = n_traj, ...)
 }
