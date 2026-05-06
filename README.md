@@ -6,7 +6,6 @@
 <!-- badges: start -->
 
 [![R-CMD-check](https://github.com/LorenzoZambon/BETS/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/LorenzoZambon/BETS/actions/workflows/R-CMD-check.yaml)
-[![R-CMD-check](https://github.com/LorenzoZambon/BETS/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/LorenzoZambon/BETS/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
 The goal of BETS is to …
