@@ -6,6 +6,8 @@
 <!-- badges: start -->
 
 [![R-CMD-check](https://github.com/LorenzoZambon/BETS/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/LorenzoZambon/BETS/actions/workflows/R-CMD-check.yaml)
+[![Codecov test
+coverage](https://codecov.io/gh/LorenzoZambon/BETS/graph/badge.svg)](https://app.codecov.io/gh/LorenzoZambon/BETS)
 <!-- badges: end -->
 
 The goal of BETS is to …
