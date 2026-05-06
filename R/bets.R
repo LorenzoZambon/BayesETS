@@ -18,7 +18,7 @@
 #' - `method`: Combination strategy: `"bma"` (Bayesian Model Average, default),
 #'   or `"stacking"`.
 #' - `prior_models`: optional prior model probabilities for BMA.
-#' - `n_sobol`: Number of Sobol candidates used to build the proposal distribution. 
+#' - `n_sobol`: Number of Sobol candidates used to build the proposal distribution.
 #'   Default `NULL` resolves to `N_draw` (same budget
 #'   as one AIS iteration), which already scales with problem dimension through
 #'   `N_draw`. Powers of 2 are optimal for Sobol sequences.
@@ -75,12 +75,15 @@ bets <- function(y,
 #' @export
 print.bets <- function(x, ...) {
   cat("BETS model fit\n")
-  cat(sprintf("  length(y): %d\n", length(x$y)))
+  cat(sprintf("  length of the series: %d\n", length(x$y)))
   cat(sprintf("  frequency: %d\n", stats::frequency(x$y)))
-  cat(sprintf("  combination: %s\n", x$control$method))
+
+  print_comb <- ifelse(x$control$method == "bma", "Bayesian Model Averaging", "Stacking")
+  cat(sprintf("  combination: %s\n", print_comb))
 
   mc <- x$model_components
   labels <- vapply(mc, ets_label, character(1))
+  cat("\n  Models and weights:\n")
   for (i in seq_along(labels)) {
     cat(sprintf("  %-5s weight: %.3f\n", labels[i], x$fit$model_weights[i]))
   }
