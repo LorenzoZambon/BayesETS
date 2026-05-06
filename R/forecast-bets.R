@@ -46,7 +46,7 @@ predict.bets <- function(object, newdata = NULL, h = 10, level = c(80, 95),
 
   x       <- object$y
   tspx    <- stats::tsp(x)
-  deltat  <- tspx[3]
+  deltat  <- 1 / tspx[3]          # tspx[3] is frequency; time step = 1/frequency
   start_fc <- tspx[2] + deltat
 
   mean_ts  <- stats::ts(mean_fc, start = start_fc, frequency = stats::frequency(x))
