@@ -41,9 +41,16 @@ test_that("bets() result contains expected top-level elements", {
                ignore.order = TRUE)
 })
 
-test_that("bets() model_weights sum to 1 under BMA", {
+test_that("bets() model_weights sum to 1 under BMA with single model", {
   set.seed(1)
   fit <- bets(ts(rnorm(20)), model = "ANN")
+  expect_equal(sum(fit$fit$model_weights), 1, tolerance = 1e-8)
+})
+
+test_that("bets() model_weights sum to 1 under BMA with multiple models", {
+  # Single-model BMA is trivially 1; this multi-model case catches missing /sum(w)
+  set.seed(1)
+  fit <- bets(ts(rnorm(20)), model = list("ANN", "AAN"))
   expect_equal(sum(fit$fit$model_weights), 1, tolerance = 1e-8)
 })
 

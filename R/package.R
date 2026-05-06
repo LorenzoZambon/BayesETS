@@ -63,7 +63,8 @@ fit_bets_models <- function(y,
     prior_models <- ctrl$prior_models
     if (is.null(prior_models)) prior_models <- rep(1 / n_models, n_models)
     log_post_unnorm <- log(prior_models) + log_marginal_liks
-    model_weights <- exp(log_post_unnorm - max(log_post_unnorm))
+    w <- exp(log_post_unnorm - max(log_post_unnorm))
+    model_weights <- w / sum(w)
   }
   
   if (verbose >= 1) {
