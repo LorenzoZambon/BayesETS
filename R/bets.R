@@ -1,23 +1,28 @@
 #' Fit a Bayesian ETS model
 #'
-#' Fits additive-error ETS variants using adaptive importance sampling,
-#' then combines models with BMA or stacking.
+#' Estimates multiple ETS variants by drawing samples from the posterior distribution
+#' of the parameters, using adaptive importance sampling (AIS).
+#' The resulting model fits are then combined into a single predictive distribution,
+#' either by Bayesian Model Averaging (BMA) or stacking.
+#' Currently only additive-error models are supported (i.e. `additive.only = TRUE`).
 #'
 #' @param y Univariate time series.
 #' @param model Model space. Use `"ZZZ"` (default) to search a predefined set,
-#'   or pass a specific model specification.
-#' @param additive.only Logical; if `TRUE` (default), multiplicative ETS components are rejected.
+#'   or pass a specific model specification (e.g., "AAdN").
+#' @param additive.only Logical; if `TRUE` (default), only additive-error models are considered.
+#' Currently, setting `additive.only = FALSE` will result in an error.
 #' @param control Named list of tuning parameters. Missing values are filled from
 #'   package defaults. See **Details**.
 #'
 #' @details
 #' ## Control parameters
 #'
-#' The `control` argument accepts a named list with the following entries:
+#' The `control` argument accepts a named list with the following entries: (TODO)
 #'
 #' - `method`: Combination strategy: `"bma"` (Bayesian Model Average, default),
 #'   or `"stacking"`.
-#' - `prior_models`: optional prior model probabilities for BMA.
+#' - `prior_models`: optional prior model probabilities for BMA, passed as a
+#' list (...). Default: equal weights.
 #' - `n_sobol`: Number of Sobol candidates used to build the proposal distribution.
 #'   Default `NULL` resolves to `N_draw` (same budget
 #'   as one AIS iteration), which already scales with problem dimension through
@@ -46,12 +51,13 @@ bets <- function(y,
 
   method <- if (!is.null(control$method)) {
     match.arg(control$method, c("bma", "stacking"))
+    control$method <- NULL  # remove method from control to avoid confusion later
   } else {
     "bma"
   }
 
   ctrl <- resolve_bets_control(control, freq)
-  model_components <- coerce_model_components(model, stats::frequency(y), additive.only = TRUE)  # multiplicative models not supported yet
+  model_components <- coerce_model_components(model, freq, additive.only)
 
   fit <- fit_bets_models(
     y = y,

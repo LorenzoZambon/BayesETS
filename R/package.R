@@ -21,14 +21,16 @@ fit_bets_models <- function(y,
   verbose <- ctrl$verbose
   psi0    <- ctrl$psi0
 
-  m <- stats::frequency(y)
+  freq <- stats::frequency(y)
 
   n_models <- length(model_components)
   need_pointwise <- (method == "stacking")
 
+  # set psi0 as either the MSE of the naive (if frequency = 1) or
+  # the average of the MSEs of the naive and seasonal naive (if frequency > 1)
   if (is.null(psi0)) {
     mse_naive <- mean(diff(y, lag = 1)^2)
-    psi0 <- if (m > 1) 0.5 * (mean(diff(y, lag = m)^2) + mse_naive) else mse_naive
+    psi0 <- if (freq > 1) 0.5 * (mean(diff(y, lag = freq)^2) + mse_naive) else mse_naive
     ctrl$psi0 <- psi0
   }
 
@@ -40,14 +42,14 @@ fit_bets_models <- function(y,
   for (i in seq_along(model_components)) {
     if (verbose >= 2) cat(sprintf("\nFitting model %d of %d\n", i, n_models))
     t0 <- proc.time()[3]
-    
+
     res_i <- adaptive_is_rb(
       y,
       model_components[[i]],
       ctrl = ctrl,
       return_pointwise = need_pointwise
     )
-    
+
     fit_time_per_model[i] <- proc.time()[3] - t0
     results_list[[i]] <- res_i
     results_list[[i]]$model_components <- model_components[[i]]
@@ -66,7 +68,7 @@ fit_bets_models <- function(y,
     w <- exp(log_post_unnorm - max(log_post_unnorm))
     model_weights <- w / sum(w)
   }
-  
+
   if (verbose >= 1) {
     labels <- vapply(model_components, ets_label, character(1))
     for (i in seq_along(labels)) {

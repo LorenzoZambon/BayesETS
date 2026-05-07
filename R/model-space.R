@@ -44,27 +44,23 @@ bets_control_defaults <- function(freq = 1) {
 }
 
 resolve_bets_control <- function(control = list(), freq = 1) {
-  defaults <- bets_control_defaults(freq)
   if (!is.list(control)) {
     stop("control must be a named list")
   }
-  # method, sampler live in control but are not tuning params
-  bets_keys <- c("method", "sampler")
-  unknown <- setdiff(names(control), c(names(defaults), bets_keys))
-  if (length(unknown) > 0) {
-    stop(sprintf("Unknown control entries: %s", paste(unknown, collapse = ", ")))
-  }
-  control <- control[setdiff(names(control), bets_keys)]
+  defaults <- bets_control_defaults(freq)
 
-  out <- utils::modifyList(defaults, control)
-  # min_ess and n_sobol are resolved per-model inside each sampler (after d is known):
-  #   min_ess defaults to N_final[d] / 2
-  #   n_sobol defaults to N_draw[d]
-  out
+  # Check if control contains any unknown entries (not in defaults) and if so issue a warning and ignore them
+  unknown <- setdiff(names(control), names(defaults))
+  if (length(unknown) > 0) {
+    warning(sprintf("Unknown control entries: %s. They will be ignored.", paste(unknown, collapse = ", ")))
+    control <- control[setdiff(names(control), unknown)]
+  }
+
+  return(utils::modifyList(defaults, control))
 }
 
-bets_model_space <- function(m) {
-  if (m > 1) {
+bets_model_space <- function(freq) {
+  if (freq > 1) {
     list(
       c("A", "N", "N", "FALSE"),
       c("A", "A", "N", "FALSE"),
@@ -82,7 +78,7 @@ bets_model_space <- function(m) {
   }
 }
 
-coerce_model_components <- function(model, m, additive.only = TRUE) {
+coerce_model_components <- function(model, freq, additive.only = TRUE) {
   if (!is.logical(additive.only) || length(additive.only) != 1 || is.na(additive.only)) {
     stop("additive.only must be TRUE or FALSE")
   }
@@ -179,7 +175,7 @@ coerce_model_components <- function(model, m, additive.only = TRUE) {
   }
 
   if (is.null(model) || identical(model, "ZZZ")) {
-    return(bets_model_space(m))
+    return(bets_model_space(freq))
   }
 
   if (is.character(model) && length(model) %in% c(1, 3, 4)) {
