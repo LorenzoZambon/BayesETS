@@ -55,6 +55,9 @@ transform_unconstrained_to_theta <- function(theta_unc, param_names, phi_min, ph
 ##############################################################################
 ### Joint Proposal Functions ###
 
+.VAR_FLOOR <- 1e-6
+.FB_MULT <- 1e-4
+
 # Compute heuristic initialization for parameters of mvt prior for initial states
 # Returns list of named vectors (init_mu, init_var)
 # names: "l", optionally "b", "s1..sm"
@@ -74,6 +77,8 @@ init_eta_params <- function(y, model_components, eta_df,
 
   l <- mean(y[1:m])
   var_l <- var_l_mult * mse_naive
+  if (is.na(var_l) || var_l <= 0) var_l <- .VAR_FLOOR  # fallback for constant series
+
   init_mu <- l
   init_var <- var_l
 
@@ -84,6 +89,8 @@ init_eta_params <- function(y, model_components, eta_df,
       b <- y[2] - y[1]
     }
     var_b <- var_b_mult * stats::var(seas_diffs / n_lags)
+    # ensure b variance is not too small relative to l + fallback if seas_diffs variance is 0
+    var_b <- max(var_b, .FB_MULT * var_l, na.rm = T)
     init_mu <- c(init_mu, b)
     init_var <- c(init_var, var_b)
   }
@@ -92,7 +99,10 @@ init_eta_params <- function(y, model_components, eta_df,
     s <- rep(0, m - 1)
     y_mat <- matrix(c(y, rep(NA, -L %% m)), nrow = m)
     seas_vars <- apply(y_mat, 2, stats::var, na.rm = TRUE)
-    var_s <- rep(var_s_mult * mean(seas_vars, na.rm = TRUE), m - 1)
+    var_s_raw <- var_s_mult * mean(seas_vars, na.rm = TRUE)
+    # ensure s variance is not too small relative to l + fallback if seas_diffs variances are 0
+    var_s_raw <- max(var_s_raw, .FB_MULT * var_l, na.rm = T)
+    var_s <- rep(var_s_raw, m - 1)
     init_mu <- c(init_mu, s)
     init_var <- c(init_var, var_s)
   }
