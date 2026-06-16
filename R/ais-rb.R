@@ -217,7 +217,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
     if (iter >= first_iter_mult_N) {
       N_draw <- min(as.integer(N_draw * N_draw_mult), N_draw_max)
     }
-    if (iter > 1 && ess < 0.8 * prev_ess) {
+    if (iter > first_iter_mult_Sigma && ess < 0.8 * prev_ess) {
       theta_prop_params$Sigma <- theta_prop_params$Sigma * factor_inflate_Sigma
     }
     R_chol <- chol(theta_prop_params$Sigma)   # recompute once after Sigma update
