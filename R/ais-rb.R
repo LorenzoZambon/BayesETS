@@ -9,7 +9,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
                            return_pointwise = FALSE) {
   N_iter_max <- ctrl$N_iter_max
   N_draw_raw <- ctrl$N_draw      # may be a scalar or length-4 vector; resolved per d below
-  N_draw_max <- ctrl$N_draw_max
+  N_draw_max <- ctrl$N_draw_max  # NULL or scalar; if NULL, set to 10 * N_draw[d] after d is resolved
   N_final_raw <- ctrl$N_final   # same
   min_ess_raw <- ctrl$min_ess   # NULL or scalar or vector; resolved per d below
   n_sobol_raw <- ctrl$n_sobol   # NULL (→ N_draw[d]) or scalar or vector
@@ -36,6 +36,9 @@ adaptive_is_rb <- function(y, model_components, ctrl,
 
   # Resolve dimension-dependent scalars now that d = n_theta is known.
   N_draw  <- resolve_by_d(N_draw_raw,  n_theta)
+  if (is.null(N_draw_max)) {
+    N_draw_max <- as.integer(N_draw * 10)
+  }
   N_final <- resolve_by_d(N_final_raw, n_theta)
   min_ess <- if (is.null(min_ess_raw)) N_final / 2 else resolve_by_d(min_ess_raw, n_theta)
   # n_sobol = N_draw by default (cost-equivalent to one AIS iteration)

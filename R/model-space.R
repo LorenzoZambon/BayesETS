@@ -16,13 +16,14 @@ resolve_by_d <- function(param, d) {
 
 bets_control_defaults <- function(freq = 1) {
   # N_draw and N_final are dimension-indexed vectors (index = theta dim d = 1..4).
+  # Default N_draw_max is 10 times N_draw, but can be overridden by user.
   # Rule: N_draw = 256 * 2^(d-1); N_final = min(1000, 200 * 2^(d-1))
   # Pass a scalar to override uniformly; pass a length-4 vector for per-d control.
   # Both are resolved to a scalar inside each sampler via resolve_by_d(param, d).
   list(
     N_iter_max = 30,
     N_draw     = c(256L, 512L, 1024L, 2048L),
-    N_draw_max = 1e5,
+    N_draw_max = NULL,
     N_final    = c(200L, 400L, 800L, 1000L),
     nu0 = 3,
     psi0 = NULL,
