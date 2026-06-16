@@ -10,9 +10,10 @@ bets(y, model = "ZZZ", additive.only = TRUE, control = list())
 \item{y}{Univariate time series.}
 
 \item{model}{Model space. Use \code{"ZZZ"} (default) to search a predefined set,
-or pass a specific model specification.}
+or pass a specific model specification (e.g., "AAdN").}
 
-\item{additive.only}{Logical; if \code{TRUE} (default), multiplicative ETS components are rejected.}
+\item{additive.only}{Logical; if \code{TRUE} (default), only additive-error models are considered.
+Currently, setting \code{additive.only = FALSE} will result in an error.}
 
 \item{control}{Named list of tuning parameters. Missing values are filled from
 package defaults. See \strong{Details}.}
@@ -21,17 +22,21 @@ package defaults. See \strong{Details}.}
 An object of class \code{"bets"}.
 }
 \description{
-Fits additive-error ETS variants using adaptive importance sampling,
-then combines models with BMA or stacking.
+Estimates multiple ETS variants by drawing samples from the posterior distribution
+of the parameters, using adaptive importance sampling (AIS).
+The resulting model fits are then combined into a single predictive distribution,
+either by Bayesian Model Averaging (BMA) or stacking.
+Currently only additive-error models are supported (i.e. \code{additive.only = TRUE}).
 }
 \details{
 \subsection{Control parameters}{
 
-The \code{control} argument accepts a named list with the following entries:
+The \code{control} argument accepts a named list with the following entries: (TODO)
 \itemize{
 \item \code{method}: Combination strategy: \code{"bma"} (Bayesian Model Average, default),
 or \code{"stacking"}.
-\item \code{prior_models}: optional prior model probabilities for BMA.
+\item \code{prior_models}: optional prior model probabilities for BMA, passed as a
+list (...). Default: equal weights.
 \item \code{n_sobol}: Number of Sobol candidates used to build the proposal distribution.
 Default \code{NULL} resolves to \code{N_draw} (same budget
 as one AIS iteration), which already scales with problem dimension through

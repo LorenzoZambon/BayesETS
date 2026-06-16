@@ -66,20 +66,23 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   # So V0 = Sigma_heuristic / psi0
   Sigma_heuristic_free <- eta_init$Sigma * c_inflate_eta
 
-  # Expand to include the constrained seasonal state.
-  # The sum-to-zero constraint s_1 + ... + s_m = 0 is structural (enforced by
-  # the design matrix X), so the prior does not need to encode it.  Encoding
-  # it via off-diagonal coupling terms makes Sigma_full exactly rank-deficient
-  # (the direction [0,...,0,1,...,1] over all seasonal states has zero
-  # quadratic form), causing inv_sympd(V0) to fail.  Use an independent prior
-  # for s_m with the same marginal scale as the other seasonal states instead.
+  # Expand to include the m-th seasonal slot, dropping the standard ETS
+  # sum-to-zero constraint s_1 + ... + s_m = 0.  The design matrix X does NOT
+  # enforce the constraint: the recursion is invariant under the joint shift
+  # (l_0, s_1, ..., s_m) -> (l_0 + c, s_1 - c, ..., s_m - c), so X'X has rank
+  # n_eta - 1.  We use a diagonal prior on all m slots; the prior regularizes
+  # the unidentified shift direction without changing the predictive
+  # distribution, and keeps V0 (and hence V0^{-1}) positive definite, which
+  # is required by the Woodbury-based marginal_likelihood_rb kernel.
+  # Encoding the constraint via off-diagonal coupling would make V0 exactly
+  # rank-deficient and break inv_sympd(V0).
   if (seas && m > 1) {
     n_free <- length(eta0_free)
     n_full <- n_eta
     s_indices_free <- grep("^s\\d+$", names(eta0_free))
     Sigma_full <- matrix(0, n_full, n_full)
     Sigma_full[1:n_free, 1:n_free] <- Sigma_heuristic_free
-    # Independent prior for the constrained seasonal state s_m
+    # Independent prior for the m-th seasonal slot, with the same marginal scale as the others
     Sigma_full[n_full, n_full] <- mean(diag(Sigma_heuristic_free)[s_indices_free])
   } else {
     Sigma_full <- Sigma_heuristic_free
