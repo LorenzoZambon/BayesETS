@@ -243,6 +243,25 @@ adaptive_is_rb <- function(y, model_components, ctrl,
     N_particles     <- N_draw
   }
 
+  log_evidence <- max(log_w) + log(mean(exp(log_w - max(log_w))))
+
+  # Convergence check: if ESS did not reach the target, skip posterior
+  # reconstruction entirely — this model will receive zero weight in BMA/stacking.
+  if (ess < min_ess) {
+    return(list(
+      thetas = NULL,
+      etas = NULL,
+      states = NULL,
+      sigma2s = NULL,
+      ess = ess,
+      n_iter = iter,
+      prop_params = theta_prop_params,
+      log_evidence = -Inf,
+      log_lik_pointwise = if (return_pointwise) matrix(-1e300, nrow = N_final, ncol = L) else NULL,  # use -1e300 instead of -Inf to avoid NaN in logsumexp
+      timing = timing
+    ))
+  }
+
   # ---- Step 6: Posterior Reconstruction ----
   if (do_time) t0 <- proc.time()[3]
   res_idx <- sample(N_particles, size = N_final, replace = TRUE, prob = w)
@@ -288,8 +307,6 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   )
   states <- refit_final$states
   colnames(states) <- eta_col_names_r
-
-  log_evidence <- max(log_w) + log(mean(exp(log_w - max(log_w))))
 
   log_lik_pointwise <- NULL
   if (return_pointwise) {
