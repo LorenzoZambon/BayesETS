@@ -11,5 +11,10 @@ Bayesian ETS models with adaptive importance sampling.
 \author{
 \strong{Maintainer}: Lorenzo Zambon \email{lorenzo.zambon@supsi.ch}
 
+Authors:
+\itemize{
+  \item Lorenzo Zambon \email{lorenzo.zambon@supsi.ch}
+}
+
 }
 \keyword{internal}

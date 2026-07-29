@@ -24,6 +24,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   N_draw_mult         <- ctrl$N_draw_mult
   first_iter_mult_N   <- ctrl$first_iter_mult_N
   factor_inflate_Sigma <- ctrl$factor_inflate_Sigma
+  first_iter_mult_Sigma <- ctrl$first_iter_mult_Sigma
   verbose    <- ctrl$verbose
 
   L <- length(y)
