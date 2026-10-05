@@ -3,30 +3,27 @@
 ###
 ### Samples only theta, analytically integrating out eta (initial states)
 ### and sigma^2 using conjugate Normal-Inverse-Chi-Squared priors.
+###
+### The first proposal is a multivariate Student-t centred at the mode of the
+### integrand in the unconstrained coordinates z and scaled by its inverse
+### Hessian (the Laplace fit shared with quadrature_rb()), sampled with
+### randomised Sobol points.  It is adapted by weighted moment matching only
+### while the ESS is below min_ess; the draws of all iterations are pooled.
 ##############################################################################
 
 adaptive_is_rb <- function(y, model_components, ctrl,
                            return_pointwise = FALSE) {
-  N_iter_max <- ctrl$N_iter_max
-  N_draw_raw <- ctrl$N_draw      # may be a scalar or length-4 vector; resolved per d below
-  N_draw_max <- ctrl$N_draw_max  # NULL or scalar; if NULL, set to 10 * N_draw[d] after d is resolved
+  N_iter_max  <- ctrl$N_iter_max
+  N_draw_raw  <- ctrl$N_draw    # may be a scalar or length-4 vector; resolved per d below
   N_final_raw <- ctrl$N_final   # same
-  min_ess_raw <- ctrl$min_ess   # NULL or scalar or vector; resolved per d below
-  n_sobol_raw <- ctrl$n_sobol   # NULL (→ N_draw[d]) or scalar or vector
-  nu0        <- ctrl$nu0
-  phi_min    <- ctrl$phi_min
-  phi_max    <- ctrl$phi_max
-  eta_df     <- ctrl$eta_df
-  eta_df_incr_per_iter <- ctrl$eta_df_incr_per_iter
-  lr         <- ctrl$lr
-  N_draw_mult         <- ctrl$N_draw_mult
-  first_iter_mult_N   <- ctrl$first_iter_mult_N
-  factor_inflate_Sigma <- ctrl$factor_inflate_Sigma
-  first_iter_mult_Sigma <- ctrl$first_iter_mult_Sigma
-  verbose    <- ctrl$verbose
+  min_ess_raw <- ctrl$min_ess   # NULL (-> N_draw[d] / 4) or scalar or vector
+  is_df       <- ctrl$is_df
+  is_scale    <- ctrl$is_scale
+  lr          <- ctrl$lr
+  nu0         <- ctrl$nu0
+  verbose     <- ctrl$verbose
 
   L <- length(y)
-  m <- stats::frequency(y)
   trend <- (model_components[[2]] == "A")
   seas <- (model_components[[3]] == "A")
   damped <- (model_components[[4]] == "TRUE")
@@ -35,182 +32,63 @@ adaptive_is_rb <- function(y, model_components, ctrl,
 
   # Resolve dimension-dependent scalars now that d = n_theta is known.
   N_draw  <- resolve_by_d(N_draw_raw,  n_theta)
-  if (is.null(N_draw_max)) {
-    N_draw_max <- as.integer(N_draw * 10)
-  }
   N_final <- resolve_by_d(N_final_raw, n_theta)
-  min_ess <- if (is.null(min_ess_raw)) N_final / 2 else resolve_by_d(min_ess_raw, n_theta)
-  # n_sobol = N_draw by default (cost-equivalent to one AIS iteration)
-  n_sobol <- if (is.null(n_sobol_raw)) N_draw else resolve_by_d(n_sobol_raw, n_theta)
+  min_ess <- if (is.null(min_ess_raw)) N_draw / 4 else resolve_by_d(min_ess_raw, n_theta)
 
-  # ---- Set up eta prior ----
+  # ---- Set up eta prior and the integrand ----
   prior <- init_rb_prior(y, model_components, theta_names, ctrl)
-  eta0  <- prior$eta0
-  V0    <- prior$V0
-  psi0  <- prior$psi0
-  # log_prior_theta_const: used both in sobol_scan_rb and in the AIS loop.
-  log_prior_theta_const <- prior$log_prior_theta_const
+  log_g_rb <- make_log_g_rb(y, model_components, theta_names, ctrl, prior)
 
-  # ---- Initialize theta-only proposal ----
-  # Run sobol_scan_rb (iteration 0 under a Logistic(0,1) proposal in unconstrained space).
-  # If ESS already reaches min_ess the AIS loop is skipped entirely.
-  sobol_scan <- sobol_scan_rb(
-    y, model_components, theta_names, phi_min, phi_max,
-    n_sobol               = n_sobol,
-    eta0                  = eta0, V0 = V0, nu0 = nu0, psi0 = psi0, L = L,
-    log_prior_theta_const = log_prior_theta_const,
-    eta_df                = eta_df
-  )
-  theta_prop_params <- if (!sobol_scan$failed) {
-    sobol_scan$prop_params
-  } else {
-    ji <- init_joint_params(y, model_components, theta_names, eta_df)
-    list(mus   = ji$mus[theta_names],
-         Sigma = ji$Sigma[theta_names, theta_names, drop = FALSE],
-         df    = ji$df)
-  }
+  # ---- Adaptive importance sampling ----
+  ais <- adaptive_importance_sampling(log_g_rb, heuristic_z_start(theta_names),
+                                      n_draw = N_draw, min_ess = min_ess,
+                                      df = is_df, scale = is_scale,
+                                      n_iter_max = N_iter_max, lr = lr,
+                                      verbose = verbose)
+  timing <- c(ais$timing, list(post = 0))
 
-  # ---- Sobol early exit ----
-  # If the Sobol scan already achieved the target ESS, skip the AIS loop.
-  sobol_early_exit <- !sobol_scan$failed && sobol_scan$ess >= min_ess
-
-  prev_ess <- 0
-  timing <- list(draw = 0, design = 0, marglik = 0, weight = 0, update = 0, post = 0)
-  do_time <- verbose >= 1
-
-  y_vec  <- as.numeric(y)
-  R_chol <- chol(theta_prop_params$Sigma)   # proposal Cholesky; recomputed after each Sigma update
-
-  if (!sobol_early_exit) {
-
-  for (iter in seq_len(N_iter_max)) {
-    # ---- Step 2: Draw theta particles ----
-    if (do_time) t0 <- proc.time()[3]
-    draws <- draw_theta_only(N_draw, theta_prop_params, theta_names, phi_min, phi_max,
-                             chol_Sigma = R_chol)
-    if (do_time) timing$draw <- timing$draw + (proc.time()[3] - t0)
-
-    # ---- Step 3: Build design matrices (C++) ----
-    if (do_time) t0 <- proc.time()[3]
-    design <- build_design_and_c_batch(
-      yR = y_vec,
-      trend = trend,
-      seas = seas,
-      damped = damped,
-      m = m,
-      paramsR = draws$theta
-    )
-    if (do_time) timing$design <- timing$design + (proc.time()[3] - t0)
-
-    # ---- Step 4: Marginal likelihood evaluation (C++) ----
-    if (do_time) t0 <- proc.time()[3]
-    ml_res <- marginal_likelihood_rb(
-      XtX_cube = design$XtX,
-      Xty_mat  = design$Xty,
-      yty_vec  = design$yty,
-      eta0     = eta0,
-      V0       = V0,
-      nu0      = nu0,
-      psi0     = psi0,
-      L        = L,
-      return_posterior = TRUE
-    )
-    log_ml <- as.numeric(ml_res$log_marginal_lik)
-    if (do_time) timing$marglik <- timing$marglik + (proc.time()[3] - t0)
-
-    # ---- Step 5: Weighting ----
-    if (do_time) t0 <- proc.time()[3]
-    log_target <- log_ml + log_prior_theta_const
-    log_w <- log_target - draws$log_density
-    log_w[!is.finite(log_w)] <- -Inf
-
-    w <- exp(log_w - max(log_w))
-    w <- w / sum(w)
-    ess <- 1 / sum(w^2)
-    if (do_time) timing$weight <- timing$weight + (proc.time()[3] - t0)
-
-    if (verbose >= 2) {
-      cat(sprintf("\n\nRao-Blackwellized AIS - iter %d\n", iter))
-      cat(sprintf("\n ESS = %.1f\n", ess))
-    }
-
-    if (ess >= min_ess) break
-    if (iter == N_iter_max) {
-      warning("maximum number of RB-AIS iterations reached")
-      break
-    }
-
-    # ---- Step 5 (cont.): Update theta proposal ----
-    if (do_time) t0 <- proc.time()[3]
-    theta_prop_params <- update_theta_only_proposal(
-      theta_unc = draws$theta_unc,
-      w = w,
-      prev_params = theta_prop_params,
-      lr = lr
-    )
-    theta_prop_params$df <- theta_prop_params$df + eta_df_incr_per_iter
-    if (iter >= first_iter_mult_N) {
-      N_draw <- min(as.integer(N_draw * N_draw_mult), N_draw_max)
-    }
-    if (iter > first_iter_mult_Sigma && ess < 0.8 * prev_ess) {
-      theta_prop_params$Sigma <- theta_prop_params$Sigma * factor_inflate_Sigma
-    }
-    R_chol <- chol(theta_prop_params$Sigma)   # recompute once after Sigma update
-    if (do_time) timing$update <- timing$update + (proc.time()[3] - t0)
-    prev_ess <- ess
-  }  # end AIS loop
-
-  }  # end if (!sobol_early_exit)
-
-  # Unify particles and weights from whichever path was taken.
-  if (sobol_early_exit) {
-    w      <- sobol_scan$w
-    log_w  <- sobol_scan$log_w
-    ess    <- sobol_scan$ess
-    iter   <- 0L
-    ml_res <- sobol_scan$ml_res
-    theta_particles <- sobol_scan$theta_con
-    if (verbose >= 2)
-      cat(sprintf("\n\nRB-AIS: Sobol early exit (ESS = %.1f)\n", ess))
-  } else {
-    theta_particles <- draws$theta
-  }
-
-  log_evidence <- max(log_w) + log(mean(exp(log_w - max(log_w))))
+  prop_params <- ais$proposal
+  names(prop_params$mus) <- theta_names
+  rownames(prop_params$Sigma) <- colnames(prop_params$Sigma) <- theta_names
 
   # Convergence check: if ESS did not reach the target, skip posterior
   # reconstruction entirely — this model will receive zero weight in BMA/stacking.
-  if (ess < min_ess) {
+  if (ais$ess < min_ess) {
+    warning(sprintf(paste0(
+      "adaptive_is_rb: ESS = %.0f below min_ess = %.0f after %d iterations; ",
+      "the model gets zero weight"), ais$ess, min_ess, ais$n_iter))
     return(list(
       thetas = NULL,
       etas = NULL,
       states = NULL,
       sigma2s = NULL,
-      ess = ess,
-      n_iter = iter,
-      prop_params = theta_prop_params,
+      ess = ais$ess,
+      n_iter = ais$n_iter,
+      prop_params = prop_params,
       log_evidence = -Inf,
       log_lik_pointwise = if (return_pointwise) matrix(-1e300, nrow = N_final, ncol = L) else NULL,  # use -1e300 instead of -Inf to avoid NaN in logsumexp
       timing = timing
     ))
   }
 
-  # ---- Step 6: Posterior Reconstruction ----
-  if (do_time) t0 <- proc.time()[3]
-  post <- draw_rb_posterior(y, model_components, theta_particles, w, ml_res,
+  # ---- Posterior Reconstruction (from the draws of all iterations) ----
+  t0 <- proc.time()[3]
+  theta_particles <- do.call(rbind, lapply(ais$draw_evals, `[[`, "theta"))
+  ml_res <- bind_ml_res(lapply(ais$draw_evals, `[[`, "ml_res"))
+  post <- draw_rb_posterior(y, model_components, theta_particles, ais$w, ml_res,
                             N_final = N_final, nu0 = nu0,
                             return_pointwise = return_pointwise)
-  if (do_time) timing$post <- timing$post + (proc.time()[3] - t0)
+  timing$post <- proc.time()[3] - t0
 
   list(
     thetas = post$thetas,
     etas = post$etas,
     states = post$states,
     sigma2s = post$sigma2s,
-    ess = ess,
-    n_iter = iter,
-    prop_params = theta_prop_params,
-    log_evidence = log_evidence,
+    ess = ais$ess,
+    n_iter = ais$n_iter,
+    prop_params = prop_params,
+    log_evidence = ais$log_evidence,
     log_lik_pointwise = post$log_lik_pointwise,
     timing = timing
   )
@@ -227,7 +105,6 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
   psi0          <- ctrl$psi0
   phi_min       <- ctrl$phi_min
   phi_max       <- ctrl$phi_max
-  eta_df        <- ctrl$eta_df
   c_inflate_eta <- ctrl$c_inflate_eta
 
   m <- stats::frequency(y)
@@ -236,7 +113,7 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
   n_theta <- length(theta_names)
 
   # Use the existing heuristic for the initial states
-  eta_init <- init_eta_params(y, model_components, eta_df = eta_df)
+  eta_init <- init_eta_params(y, model_components)
   eta_names_free <- names(eta_init$mus)  # l, [b,] [s1..s_{m-1}]
 
   # For the RB formulation, eta includes the last seasonal state too
@@ -391,41 +268,121 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
 
 
 ##############################################################################
-### Theta-Only Proposal Helpers ###
+### Adaptive Importance Sampling Helpers ###
 
-# Draw from a theta-only MVT proposal (no eta)
-draw_theta_only <- function(N, proposal_params, theta_names,
-                            phi_min, phi_max, antithetic = TRUE,
-                            chol_Sigma = NULL) {
-  df <- proposal_params$df
-  mu <- proposal_params$mus
-  d  <- length(mu)
+# Adaptive importance sampling of g = exp(log g) over R^d.
+#   log_g_fn, z_start : as in adaptive_gh_quadrature().
+#   n_draw            : draws per iteration.
+#   min_ess           : stop as soon as the ESS of the pooled draws reaches it.
+# The first proposal is a multivariate Student-t (df) centred at the mode of
+# log g with scale matrix scale * H^{-1} (H the Hessian of -log g there, see
+# laplace_mode()).  While ESS < min_ess, the proposal is updated by weighted
+# moment matching (update_theta_only_proposal()) and new draws are added.  The
+# draws of all iterations are pooled and weighted against the mixture of all
+# proposals used so far (deterministic-mixture weights), so the ESS can only
+# grow.  Draws come from randomised Sobol points (RQMC).  Returns the log of
+# the IS estimate of the integral, the normalised weights of the pooled draws,
+# the draws, the output of log_g_fn per iteration and the ESS.
+adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
+                                         df = 5, scale = 1.5,
+                                         n_iter_max = 30, lr = 0.9,
+                                         verbose = 0, ...) {
+  lap <- laplace_mode(log_g_fn, z_start, ...)
+  proposal <- list(mus = lap$zhat, Sigma = scale * tcrossprod(lap$Lmat), df = df)
+  timing <- c(lap$timing, list(draws = 0, update = 0))
 
-  if (is.null(chol_Sigma)) chol_Sigma <- chol(proposal_params$Sigma)
+  proposals <- list()
+  draw_evals <- list()
+  Z <- NULL
+  log_g <- NULL
+  for (iter in seq_len(n_iter_max)) {
+    # ---- Draw and evaluate log g, all draws of the iteration in one batch ----
+    t0 <- proc.time()[3]
+    Z_new <- draw_t_rqmc(n_draw, proposal$mus, proposal$Sigma, proposal$df)
+    draw_eval <- log_g_fn(Z_new)
+    timing$draws <- timing$draws + (proc.time()[3] - t0)
+    proposals[[iter]]  <- c(proposal, list(n = nrow(Z_new)))
+    draw_evals[[iter]] <- draw_eval
+    Z <- rbind(Z, Z_new)
+    log_g <- c(log_g, draw_eval$log_g)
 
-  N_half    <- ceiling(N / 2)
-  eps       <- matrix(stats::rnorm(N_half * d), N_half, d)
-  Z_half    <- eps %*% chol_Sigma
-  chi2      <- stats::rchisq(N_half, df = df)
-  devs_half <- Z_half / sqrt(chi2 / df)
+    # ---- Weights of the pooled draws ----
+    log_w <- log_g - log_mix_density(Z, proposals)
+    log_w[!is.finite(log_w)] <- -Inf
+    lw_max <- max(log_w)
+    if (!is.finite(lw_max)) {
+      w <- NULL
+      log_evidence <- -Inf
+      ess <- 0
+      break
+    }
+    w <- exp(log_w - lw_max)
+    log_evidence <- lw_max + log(mean(w))
+    w <- w / sum(w)
+    ess <- 1 / sum(w^2)
 
-  if (antithetic) {
-    devs <- rbind(devs_half, -devs_half)[1:N, , drop = FALSE]
-  } else {
-    devs <- devs_half[1:N, , drop = FALSE]
+    if (verbose >= 2) {
+      cat(sprintf("\n\nRao-Blackwellized AIS - iter %d\n", iter))
+      cat(sprintf("\n ESS = %.1f\n", ess))
+    }
+    if (ess >= min_ess || iter == n_iter_max) break
+
+    # ---- Update the proposal ----
+    t0 <- proc.time()[3]
+    proposal <- update_theta_only_proposal(Z, w, proposal, lr = lr)
+    timing$update <- timing$update + (proc.time()[3] - t0)
   }
-  samps_unc <- sweep(devs, 2, mu, "+")
-  colnames(samps_unc) <- theta_names
-
-  log_density_unc <- ldmvt_chol(devs, chol_Sigma, df)
-
-  trans_res   <- transform_unconstrained_to_theta(samps_unc, theta_names, phi_min, phi_max)
-  log_density <- log_density_unc - trans_res$log_jac
 
   list(
-    theta       = trans_res$theta,
-    theta_unc   = samps_unc,
-    log_density = log_density
+    log_evidence = log_evidence,
+    w = w,
+    Z = Z,
+    draw_evals = draw_evals,
+    ess = ess,
+    n_iter = iter,
+    proposal = proposal,
+    zhat = lap$zhat,
+    timing = timing
+  )
+}
+
+# n RQMC draws from the multivariate Student-t (df) with location mu and scale
+# matrix Sigma: d coordinates of randomised Sobol points through qnorm, one
+# through qchisq for the mixing variable.
+draw_t_rqmc <- function(n, mu, Sigma, df) {
+  d <- length(mu)
+  u <- matrix(qrng::sobol(n, d = d + 1, randomize = "digital.shift"), ncol = d + 1)
+  eps  <- stats::qnorm(u[, seq_len(d), drop = FALSE])
+  chi2 <- stats::qchisq(u[, d + 1], df = df)
+  devs <- (eps %*% chol(Sigma)) / sqrt(chi2 / df)
+  # Drop the (measure-zero) draws from points that land exactly on 0 or 1.
+  devs <- devs[rowSums(!is.finite(devs)) == 0, , drop = FALSE]
+  sweep(devs, 2, mu, "+")
+}
+
+# Log density at the rows of Z of the mixture of Student-t proposals, each
+# weighted by its share of draws (list elements: mus, Sigma, df, n).
+log_mix_density <- function(Z, proposals) {
+  n_tot <- sum(vapply(proposals, `[[`, numeric(1), "n"))
+  log_q <- vapply(proposals, function(p) {
+    log(p$n / n_tot) + ldmvt_chol(sweep(Z, 2, p$mus, "-"), chol(p$Sigma), p$df)
+  }, numeric(nrow(Z)))
+  log_q <- matrix(log_q, nrow = nrow(Z))
+  q_max <- apply(log_q, 1, max)
+  q_max + log(rowSums(exp(log_q - q_max)))
+}
+
+# Concatenate marginal_likelihood_rb(..., return_posterior = TRUE) outputs of
+# several batches of particles, in the same order as their rows.
+bind_ml_res <- function(ml_list) {
+  if (length(ml_list) == 1L) return(ml_list[[1]])
+  n_eta <- nrow(ml_list[[1]]$mu_n)
+  n_tot <- sum(vapply(ml_list, function(r) length(r$posterior_scale), numeric(1)))
+  list(
+    log_marginal_lik = unlist(lapply(ml_list, function(r) as.numeric(r$log_marginal_lik))),
+    Rn               = array(unlist(lapply(ml_list, `[[`, "Rn")), dim = c(n_eta, n_eta, n_tot)),
+    mu_n             = do.call(cbind, lapply(ml_list, `[[`, "mu_n")),
+    posterior_scale  = unlist(lapply(ml_list, function(r) as.numeric(r$posterior_scale)))
   )
 }
 

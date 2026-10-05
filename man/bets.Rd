@@ -24,7 +24,7 @@ An object of class \code{"bets"}.
 \description{
 Estimates multiple ETS variants by drawing samples from the posterior distribution
 of the parameters, using adaptive importance sampling (AIS) or, optionally,
-adaptive Gauss-Hermite quadrature or importance sampling from a Laplace proposal.
+adaptive Gauss-Hermite quadrature.
 The resulting model fits are then combined into a single predictive distribution,
 either by Bayesian Model Averaging (BMA) or stacking.
 Currently only additive-error models are supported (i.e. \code{additive.only = TRUE}).
@@ -38,30 +38,28 @@ The \code{control} argument accepts a named list with the following entries: (TO
 or \code{"stacking"}.
 \item \code{prior_models}: optional prior model probabilities for BMA, passed as a
 list (...). Default: equal weights.
-\item \code{n_sobol}: Number of Sobol candidates used to build the proposal distribution.
-Default \code{NULL} resolves to \code{N_draw} (same budget
-as one AIS iteration), which already scales with problem dimension through
-\code{N_draw}. Powers of 2 are optimal for Sobol sequences.
 \item \code{integration_method}: How the smoothing parameters are integrated out of
-each model: \code{"ais"} (adaptive importance sampling, default),
-\code{"quadrature"} (adaptive Gauss-Hermite quadrature on a grid centred at the
-posterior mode of the unconstrained parameters and scaled by the inverse
-Hessian there) or \code{"laplace_is"} (a single importance sampling step from a
-Student-t proposal centred at the same mode, with the inverse Hessian as
-scale, sampled with randomised Sobol points). Initial states and error
-variance are integrated out analytically in all cases. With \code{"quadrature"}
-and \code{"laplace_is"}, \code{N_draw}, \code{N_draw_max}, \code{N_iter_max}, \code{min_ess} and
-\code{n_sobol} are not used.
-\item \code{n_quad}: Number of Gauss-Hermite nodes per dimension when
-\code{integration_method = "quadrature"}, indexed by the number \code{d} of smoothing
-parameters (1 to 4); the grid has \code{n_quad[d]^d} nodes. Default
-\code{c(15, 9, 7, 5)}; a scalar applies to all \code{d}.
-\item \code{n_is}: Number of draws when \code{integration_method = "laplace_is"}, indexed by
-\code{d} like \code{n_quad}. Default \code{c(128, 256, 512, 1024)}. Powers of 2 are optimal
-for Sobol sequences.
-\item \code{is_df}, \code{is_scale}: Degrees of freedom of the Student-t proposal of
-\code{"laplace_is"} (default 5) and inflation of its scale matrix relative to the
+each model: \code{"ais"} (adaptive importance sampling, default) or
+\code{"quadrature"} (adaptive Gauss-Hermite quadrature). Both start from the
+posterior mode of the unconstrained parameters and the inverse Hessian
+there. AIS draws from a Student-t proposal centred at the mode, sampled
+with randomised Sobol points, and adapts it only while the effective
+sample size is below \code{min_ess} (usually a single step suffices).
+Quadrature integrates on a Gauss-Hermite grid scaled by the inverse
+Hessian. Initial states and error variance are integrated out analytically
+in both cases.
+\item \code{N_draw}: Number of AIS draws per iteration, indexed by the number \code{d} of
+smoothing parameters (1 to 4). Default \code{c(128, 256, 512, 1024)}; a scalar
+applies to all \code{d}. Powers of 2 are optimal for Sobol sequences.
+\item \code{min_ess}: AIS stops as soon as the effective sample size of all draws so
+far reaches \code{min_ess}. Default \code{NULL} resolves to \code{N_draw / 4}. Models that
+do not reach it within \code{N_iter_max} iterations (default 30) get zero weight.
+\item \code{is_df}, \code{is_scale}: Degrees of freedom of the Student-t proposal of AIS
+(default 5) and inflation of its initial scale matrix relative to the
 inverse Hessian (default 1.5).
+\item \code{n_quad}: Number of Gauss-Hermite nodes per dimension when
+\code{integration_method = "quadrature"}, indexed by \code{d} like \code{N_draw}; the grid
+has \code{n_quad[d]^d} nodes. Default \code{c(15, 9, 7, 5)}.
 }
 }
 }

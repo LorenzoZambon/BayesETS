@@ -61,7 +61,7 @@ transform_unconstrained_to_theta <- function(theta_unc, param_names, phi_min, ph
 # Compute heuristic initialization for parameters of mvt prior for initial states
 # Returns list of named vectors (init_mu, init_var)
 # names: "l", optionally "b", "s1..sm"
-init_eta_params <- function(y, model_components, eta_df,
+init_eta_params <- function(y, model_components, eta_df = NULL,
                             var_l_mult = 1,
                             var_b_mult = 1,
                             var_s_mult = 1) {
@@ -112,41 +112,6 @@ init_eta_params <- function(y, model_components, eta_df,
   diag(Sigma) <- init_var
 
   list(mus = init_mu, Sigma = Sigma, df = eta_df)
-}
-
-# Initialize Joint Proposal
-init_joint_params <- function(y, model_components, theta_names, eta_df = 7) {
-
-  # Eta initialization (use heuristic)
-  eta_init <- init_eta_params(y, model_components, eta_df = eta_df)
-  eta_names <- names(eta_init$mus)
-
-  # Theta initialization (Unconstrained)
-  # initialize theta around sensible defaults (e.g. 0 in logit space = 0.5 prob)
-  theta_mus <- rep(0, length(theta_names))
-  names(theta_mus) <- theta_names
-
-  # If damped trend, phi usually high, set init logit > 0
-  if ("phi" %in% theta_names) theta_mus["phi"] <- 1.0
-
-  # Combine
-  joint_mus <- c(theta_mus, eta_init$mus)
-
-  # 4. Joint Covariance
-  # Block diagonal: Theta part (Identity*scale) + Eta part (Heuristic)
-  n_theta <- length(theta_names)
-  n_eta <- length(eta_names)
-
-  Sigma_theta <- diag(1, n_theta)
-
-  # Build block diagonal matrix
-  Sigma_joint <- matrix(0, nrow = n_theta + n_eta, ncol = n_theta + n_eta)
-  Sigma_joint[1:n_theta, 1:n_theta] <- Sigma_theta
-  Sigma_joint[(n_theta + 1):(n_theta + n_eta), (n_theta + 1):(n_theta + n_eta)] <- eta_init$Sigma
-
-  rownames(Sigma_joint) <- colnames(Sigma_joint) <- names(joint_mus)
-
-  list(mus = joint_mus, Sigma = Sigma_joint, df = eta_df)
 }
 
 ##############################################################################

@@ -84,7 +84,7 @@ quadrature_rb <- function(y, model_components, ctrl,
 
 
 ##############################################################################
-### Laplace Helpers (shared by quadrature_rb and laplace_is_rb) ###
+### Laplace Helpers (shared by quadrature_rb and adaptive_is_rb) ###
 
 # log g(z) = log p(y | theta(z)) + log p(theta(z)) + log |d theta / d z|, as a
 # function of an n x d matrix Z of unconstrained points, evaluated for all rows
@@ -134,9 +134,9 @@ make_log_g_rb <- function(y, model_components, theta_names, ctrl, prior) {
   }
 }
 
-# Heuristic start of the mode search, as in init_joint_params(): z = 0 (centre
-# of each range), except phi at z = 1 (damping usually high).  No Sobol scan:
-# on M3 it gave the same log evidence (to 1e-4) at a large share of the cost.
+# Heuristic start of the mode search: z = 0 (centre of each range), except phi
+# at z = 1 (damping usually high).  No Sobol scan: on M3 it gave the same log
+# evidence (to 1e-4) at a large share of the cost.
 heuristic_z_start <- function(theta_names) {
   as.numeric(theta_names == "phi")
 }

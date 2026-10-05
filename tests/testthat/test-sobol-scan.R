@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# sobol_scan_rb(): importance weights of the Sobol early exit
+# sobol_scan_rb(): importance weights of the Sobol scan
 # ---------------------------------------------------------------------------
 
 # ETS(A,N,A) series: for d >= 2 the Sobol proposal is not uniform on the
@@ -18,19 +18,25 @@ sim_ana <- function(L, m, alpha, gamma, sigma) {
   stats::ts(y, frequency = m)
 }
 
-test_that("Sobol early-exit log evidence matches quadrature for d = 2", {
+test_that("Sobol scan log evidence matches quadrature for d = 2", {
   set.seed(4)
   y <- sim_ana(48, 4, alpha = 0.3, gamma = 0.2, sigma = 1.5)
   mc <- BETS:::coerce_model_components("ANA", 4)
-  fit_single <- function(control) {
-    set.seed(1)
-    ctrl <- BETS:::resolve_bets_control(control, 4)
-    BETS:::fit_bets_models(y, mc, ctrl)$results[[1]]
-  }
-  # min_ess = 1 forces the early exit: the estimate is the Sobol scan alone.
-  res_sobol <- fit_single(list(n_sobol = 4096L, min_ess = 1, N_final = 50L))
-  res_quad  <- fit_single(list(integration_method = "quadrature", n_quad = 25L, N_final = 50L))
-  expect_equal(res_sobol$n_iter, 0L)
+  ctrl <- BETS:::resolve_bets_control(list(integration_method = "quadrature",
+                                           n_quad = 25L, N_final = 50L), 4)
+  res_quad <- BETS:::fit_bets_models(y, mc, ctrl)$results[[1]]
+
+  # Same psi0 as fit_bets_models() uses for frequency > 1.
+  ctrl$psi0 <- 0.5 * (mean(diff(y, lag = 4)^2) + mean(diff(y)^2))
+  theta_names <- c("alpha", "gamma")
+  prior <- BETS:::init_rb_prior(y, mc[[1]], theta_names, ctrl)
+  set.seed(1)
+  scan <- BETS:::sobol_scan_rb(y, mc[[1]], theta_names, ctrl$phi_min, ctrl$phi_max,
+                               n_sobol = 4096L, eta0 = prior$eta0, V0 = prior$V0,
+                               nu0 = ctrl$nu0, psi0 = prior$psi0, L = length(y),
+                               log_prior_theta_const = prior$log_prior_theta_const)
+  lw_max <- max(scan$log_w)
+  log_evidence_scan <- lw_max + log(mean(exp(scan$log_w - lw_max)))
   # The weights that treated the Sobol points as prior draws were off by +0.38 here.
-  expect_lt(abs(res_sobol$log_evidence - res_quad$log_evidence), 0.02)
+  expect_lt(abs(log_evidence_scan - res_quad$log_evidence), 0.02)
 })

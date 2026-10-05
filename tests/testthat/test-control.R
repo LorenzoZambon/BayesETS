@@ -23,9 +23,9 @@ test_that("resolve_bets_control() uses correct default nu0", {
   expect_equal(ctrl$nu0, 3)
 })
 
-test_that("resolve_bets_control() uses correct default eta_df", {
+test_that("resolve_bets_control() uses correct default is_df", {
   ctrl <- BETS:::resolve_bets_control(list())
-  expect_equal(ctrl$eta_df, 7)
+  expect_equal(ctrl$is_df, 5)
 })
 
 # ---------------------------------------------------------------------------
@@ -43,9 +43,9 @@ test_that("resolve_bets_control() overrides lr while keeping other defaults", {
   expect_equal(ctrl$N_iter_max, 30)
 })
 
-test_that("resolve_bets_control() overrides n_sobol", {
-  ctrl <- BETS:::resolve_bets_control(list(n_sobol = 128L))
-  expect_equal(ctrl$n_sobol, 128L)
+test_that("resolve_bets_control() overrides N_draw", {
+  ctrl <- BETS:::resolve_bets_control(list(N_draw = 64L))
+  expect_equal(ctrl$N_draw, 64L)
 })
 
 # ---------------------------------------------------------------------------

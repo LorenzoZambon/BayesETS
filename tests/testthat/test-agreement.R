@@ -1,9 +1,8 @@
 # ---------------------------------------------------------------------------
-# Agreement of integration_method = "quadrature" and "laplace_is" with "ais".
+# Agreement of quadrature and default-budget AIS with a high-budget AIS
+# reference.
 #
-# Slow (high-budget AIS reference fits), so skipped on CRAN.  The AIS
-# reference uses n_sobol < min_ess, so that every reference estimate comes
-# from the adaptive IS loop with a large budget, never from the Sobol scan.
+# Slow (high-budget AIS reference fits), so skipped on CRAN.
 # ---------------------------------------------------------------------------
 
 # Simulate an additive ETS series with the components of `code`.
@@ -62,10 +61,9 @@ for (freq in c(1, 4, 12)) {
   }
 }
 
-ais_ref_ctrl <- list(N_draw = 10000L, n_sobol = 1024L, min_ess = 5000,
-                     N_final = 5000L, N_iter_max = 50)
+ais_ref_ctrl <- list(N_draw = 8192L, min_ess = 4096, N_final = 5000L)
 quad_ctrl    <- list(integration_method = "quadrature", N_final = 5000L)
-lis_ctrl     <- list(integration_method = "laplace_is", N_final = 5000L)
+ais_ctrl     <- list(N_final = 5000L)
 
 # The AIS reference fits are expensive: computed once per series, shared by the tests.
 ais_ref_cache <- new.env()
@@ -94,15 +92,15 @@ test_that("quadrature agrees with AIS on log evidence and posterior mean of alph
   }
 })
 
-test_that("Laplace IS agrees with AIS on log evidence and posterior mean of alpha", {
+test_that("default AIS agrees with the reference on log evidence and posterior mean of alpha", {
   skip_on_cran()
   for (s in agreement_series) {
-    res_ais <- ais_reference(s)
+    res_ref <- ais_reference(s)
     set.seed(s$seed)
-    res_lis <- fit_single(s$y, s$code, lis_ctrl)
-    expect_lt(abs(res_lis$log_evidence - res_ais$log_evidence), 0.05,
+    res_ais <- fit_single(s$y, s$code, ais_ctrl)
+    expect_lt(abs(res_ais$log_evidence - res_ref$log_evidence), 0.05,
               label = paste("|log evidence difference| for", s$label))
-    expect_lt(abs(mean(res_lis$thetas[, "alpha"]) - mean(res_ais$thetas[, "alpha"])), 0.01,
+    expect_lt(abs(mean(res_ais$thetas[, "alpha"]) - mean(res_ref$thetas[, "alpha"])), 0.01,
               label = paste("|posterior mean alpha difference| for", s$label))
   }
 })
@@ -128,7 +126,7 @@ test_that("quadrature log evidence is stable between n_quad = 5 and n_quad = 7",
 # Forecast quantiles
 # ---------------------------------------------------------------------------
 
-test_that("80% and 95% forecast quantiles agree with AIS within Monte Carlo error", {
+test_that("80% and 95% forecast quantiles agree with the reference within Monte Carlo error", {
   skip_on_cran()
   n_traj <- 20000L
   probs  <- c(0.025, 0.1, 0.9, 0.975)
@@ -137,10 +135,10 @@ test_that("80% and 95% forecast quantiles agree with AIS within Monte Carlo erro
     h <- max(6, 2 * freq)
 
     set.seed(1)
-    fit_ais  <- bets(y, control = list(N_final = 4000L, min_ess = 1000, n_sobol = 512L))
+    fit_ais  <- bets(y, control = list(N_final = 4000L, N_draw = 4096L, min_ess = 2048))
     traj_ais <- BETS:::simulate_future_trajectories(fit_ais$fit, h = h, n_traj = n_traj)
 
-    for (method in c("quadrature", "laplace_is")) {
+    for (method in c("quadrature", "ais")) {
       set.seed(1)
       fit <- bets(y, control = list(N_final = 4000L, integration_method = method))
       fc <- predict(fit, h = h, level = c(80, 95), n_traj = n_traj)
