@@ -1,8 +1,8 @@
 #' Fit a Bayesian ETS model
 #'
 #' Estimates multiple ETS variants by drawing samples from the posterior distribution
-#' of the parameters, using adaptive importance sampling (AIS) or, optionally,
-#' adaptive Gauss-Hermite quadrature.
+#' of the parameters, using adaptive Gauss-Hermite quadrature or adaptive
+#' importance sampling (AIS).
 #' The resulting model fits are then combined into a single predictive distribution,
 #' either by Bayesian Model Averaging (BMA) or stacking.
 #' Currently only additive-error models are supported (i.e. `additive.only = TRUE`).
@@ -10,30 +10,37 @@
 #' @param y Univariate time series.
 #' @param model Model space. Use `"ZZZ"` (default) to search a predefined set,
 #'   or pass a specific model specification (e.g., "AAdN").
+#' @param combination How the model fits are combined: `"bma"` (Bayesian Model
+#'   Averaging, default) or `"stacking"`.
+#' @param integration How the smoothing parameters are integrated out of each
+#'   model: `"auto"` (default), `"quadrature"` or `"ais"`. `"auto"` uses
+#'   quadrature for models with up to 2 smoothing parameters (ANN, AAN, ANA) and
+#'   AIS for models with 3 or 4 (AAdN, AAA, AAdA). See **Details**.
 #' @param additive.only Logical; if `TRUE` (default), only additive-error models are considered.
 #' Currently, setting `additive.only = FALSE` will result in an error.
+#' @param verbose `0` (default) prints nothing, `1` prints the model weights,
+#'   `2` also prints the progress of each model fit. `TRUE`/`FALSE` are
+#'   accepted as `1`/`0`.
 #' @param control Named list of tuning parameters. Missing values are filled from
 #'   package defaults. See **Details**.
 #'
 #' @details
+#' ## Integration methods
+#'
+#' Both methods start from the posterior mode of the unconstrained smoothing
+#' parameters and the inverse Hessian there. Quadrature integrates on a
+#' Gauss-Hermite grid scaled by the inverse Hessian. AIS draws from a Student-t
+#' proposal centred at the mode, sampled with randomised Sobol points, and
+#' adapts it only while the effective sample size is below `min_ess` (usually a
+#' single step suffices). Initial states and error variance are integrated out
+#' analytically in both cases.
+#'
 #' ## Control parameters
 #'
 #' The `control` argument accepts a named list with the following entries: (TODO)
 #'
-#' - `method`: Combination strategy: `"bma"` (Bayesian Model Average, default),
-#'   or `"stacking"`.
 #' - `prior_models`: optional prior model probabilities for BMA, passed as a
 #' list (...). Default: equal weights.
-#' - `integration_method`: How the smoothing parameters are integrated out of
-#'   each model: `"ais"` (adaptive importance sampling, default) or
-#'   `"quadrature"` (adaptive Gauss-Hermite quadrature). Both start from the
-#'   posterior mode of the unconstrained parameters and the inverse Hessian
-#'   there. AIS draws from a Student-t proposal centred at the mode, sampled
-#'   with randomised Sobol points, and adapts it only while the effective
-#'   sample size is below `min_ess` (usually a single step suffices).
-#'   Quadrature integrates on a Gauss-Hermite grid scaled by the inverse
-#'   Hessian. Initial states and error variance are integrated out analytically
-#'   in both cases.
 #' - `N_draw`: Number of AIS draws per iteration, indexed by the number `d` of
 #'   smoothing parameters (1 to 4). Default `c(128, 256, 512, 1024)`; a scalar
 #'   applies to all `d`. Powers of 2 are optimal for Sobol sequences.
@@ -43,15 +50,18 @@
 #' - `is_df`, `is_scale`: Degrees of freedom of the Student-t proposal of AIS
 #'   (default 5) and inflation of its initial scale matrix relative to the
 #'   inverse Hessian (default 1.5).
-#' - `n_quad`: Number of Gauss-Hermite nodes per dimension when
-#'   `integration_method = "quadrature"`, indexed by `d` like `N_draw`; the grid
-#'   has `n_quad[d]^d` nodes. Default `c(15, 9, 7, 5)`.
+#' - `n_quad`: Number of Gauss-Hermite nodes per dimension for quadrature,
+#'   indexed by `d` like `N_draw`; the grid has `n_quad[d]^d` nodes. Default
+#'   `c(15, 9, 7, 5)`.
 #'
 #' @return An object of class `"bets"`.
 #' @export
 bets <- function(y,
                  model = "ZZZ",
+                 combination = c("bma", "stacking"),
+                 integration = c("auto", "quadrature", "ais"),
                  additive.only = TRUE,
+                 verbose = 0,
                  control = list()) {
   if (!stats::is.ts(y)) {
     y <- stats::ts(y)
@@ -66,14 +76,13 @@ bets <- function(y,
     stop("Currently only additive-error models are supported (additive.only = TRUE)")
   }
 
-  freq <- stats::frequency(y)
-
-  method <- if (!is.null(control$method)) {
-    match.arg(control$method, c("bma", "stacking"))
-    control$method <- NULL  # remove method from control to avoid confusion later
-  } else {
-    "bma"
+  combination <- match.arg(combination)
+  integration <- match.arg(integration)
+  if (!(is.numeric(verbose) || is.logical(verbose)) || length(verbose) != 1 || is.na(verbose)) {
+    stop("verbose must be 0, 1, 2, TRUE or FALSE")
   }
+
+  freq <- stats::frequency(y)
 
   ctrl <- resolve_bets_control(control, freq)
   model_components <- coerce_model_components(model, freq, additive.only)
@@ -82,7 +91,9 @@ bets <- function(y,
     y = y,
     model_components = model_components,
     ctrl = ctrl,
-    method = method
+    combination = combination,
+    integration = integration,
+    verbose = as.numeric(verbose)
   )
 
   structure(
@@ -103,14 +114,15 @@ print.bets <- function(x, ...) {
   cat(sprintf("  length of the series: %d\n", length(x$y)))
   cat(sprintf("  frequency: %d\n", stats::frequency(x$y)))
 
-  print_comb <- ifelse(x$control$method == "bma", "Bayesian Model Averaging", "Stacking")
+  print_comb <- ifelse(x$fit$combination == "bma", "Bayesian Model Averaging", "Stacking")
   cat(sprintf("  combination: %s\n", print_comb))
 
   mc <- x$model_components
   labels <- vapply(mc, ets_label, character(1))
+  integration <- vapply(x$fit$results, `[[`, character(1), "integration")
   cat("\n  Models and weights:\n")
   for (i in seq_along(labels)) {
-    cat(sprintf("  %-5s weight: %.3f\n", labels[i], x$fit$model_weights[i]))
+    cat(sprintf("  %-5s weight: %.3f  (%s)\n", labels[i], x$fit$model_weights[i], integration[i]))
   }
   invisible(x)
 }

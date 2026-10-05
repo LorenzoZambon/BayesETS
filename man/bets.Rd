@@ -4,7 +4,15 @@
 \alias{bets}
 \title{Fit a Bayesian ETS model}
 \usage{
-bets(y, model = "ZZZ", additive.only = TRUE, control = list())
+bets(
+  y,
+  model = "ZZZ",
+  combination = c("bma", "stacking"),
+  integration = c("auto", "quadrature", "ais"),
+  additive.only = TRUE,
+  verbose = 0,
+  control = list()
+)
 }
 \arguments{
 \item{y}{Univariate time series.}
@@ -12,8 +20,20 @@ bets(y, model = "ZZZ", additive.only = TRUE, control = list())
 \item{model}{Model space. Use \code{"ZZZ"} (default) to search a predefined set,
 or pass a specific model specification (e.g., "AAdN").}
 
+\item{combination}{How the model fits are combined: \code{"bma"} (Bayesian Model
+Averaging, default) or \code{"stacking"}.}
+
+\item{integration}{How the smoothing parameters are integrated out of each
+model: \code{"auto"} (default), \code{"quadrature"} or \code{"ais"}. \code{"auto"} uses
+quadrature for models with up to 2 smoothing parameters (ANN, AAN, ANA) and
+AIS for models with 3 or 4 (AAdN, AAA, AAdA). See \strong{Details}.}
+
 \item{additive.only}{Logical; if \code{TRUE} (default), only additive-error models are considered.
 Currently, setting \code{additive.only = FALSE} will result in an error.}
+
+\item{verbose}{\code{0} (default) prints nothing, \code{1} prints the model weights,
+\code{2} also prints the progress of each model fit. \code{TRUE}/\code{FALSE} are
+accepted as \code{1}/\code{0}.}
 
 \item{control}{Named list of tuning parameters. Missing values are filled from
 package defaults. See \strong{Details}.}
@@ -23,31 +43,30 @@ An object of class \code{"bets"}.
 }
 \description{
 Estimates multiple ETS variants by drawing samples from the posterior distribution
-of the parameters, using adaptive importance sampling (AIS) or, optionally,
-adaptive Gauss-Hermite quadrature.
+of the parameters, using adaptive Gauss-Hermite quadrature or adaptive
+importance sampling (AIS).
 The resulting model fits are then combined into a single predictive distribution,
 either by Bayesian Model Averaging (BMA) or stacking.
 Currently only additive-error models are supported (i.e. \code{additive.only = TRUE}).
 }
 \details{
+\subsection{Integration methods}{
+
+Both methods start from the posterior mode of the unconstrained smoothing
+parameters and the inverse Hessian there. Quadrature integrates on a
+Gauss-Hermite grid scaled by the inverse Hessian. AIS draws from a Student-t
+proposal centred at the mode, sampled with randomised Sobol points, and
+adapts it only while the effective sample size is below \code{min_ess} (usually a
+single step suffices). Initial states and error variance are integrated out
+analytically in both cases.
+}
+
 \subsection{Control parameters}{
 
 The \code{control} argument accepts a named list with the following entries: (TODO)
 \itemize{
-\item \code{method}: Combination strategy: \code{"bma"} (Bayesian Model Average, default),
-or \code{"stacking"}.
 \item \code{prior_models}: optional prior model probabilities for BMA, passed as a
 list (...). Default: equal weights.
-\item \code{integration_method}: How the smoothing parameters are integrated out of
-each model: \code{"ais"} (adaptive importance sampling, default) or
-\code{"quadrature"} (adaptive Gauss-Hermite quadrature). Both start from the
-posterior mode of the unconstrained parameters and the inverse Hessian
-there. AIS draws from a Student-t proposal centred at the mode, sampled
-with randomised Sobol points, and adapts it only while the effective
-sample size is below \code{min_ess} (usually a single step suffices).
-Quadrature integrates on a Gauss-Hermite grid scaled by the inverse
-Hessian. Initial states and error variance are integrated out analytically
-in both cases.
 \item \code{N_draw}: Number of AIS draws per iteration, indexed by the number \code{d} of
 smoothing parameters (1 to 4). Default \code{c(128, 256, 512, 1024)}; a scalar
 applies to all \code{d}. Powers of 2 are optimal for Sobol sequences.
@@ -57,9 +76,9 @@ do not reach it within \code{N_iter_max} iterations (default 30) get zero weight
 \item \code{is_df}, \code{is_scale}: Degrees of freedom of the Student-t proposal of AIS
 (default 5) and inflation of its initial scale matrix relative to the
 inverse Hessian (default 1.5).
-\item \code{n_quad}: Number of Gauss-Hermite nodes per dimension when
-\code{integration_method = "quadrature"}, indexed by \code{d} like \code{N_draw}; the grid
-has \code{n_quad[d]^d} nodes. Default \code{c(15, 9, 7, 5)}.
+\item \code{n_quad}: Number of Gauss-Hermite nodes per dimension for quadrature,
+indexed by \code{d} like \code{N_draw}; the grid has \code{n_quad[d]^d} nodes. Default
+\code{c(15, 9, 7, 5)}.
 }
 }
 }

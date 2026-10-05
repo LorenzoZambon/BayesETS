@@ -35,7 +35,7 @@ quadrature_rb <- function(y, model_components, ctrl,
   quad <- adaptive_gh_quadrature(log_g_rb, z_start, n_quad)
   timing <- c(quad$timing, list(post = 0))
 
-  if (verbose >= 2) {
+  if (isTRUE(verbose >= 2)) {
     cat(sprintf("\n\nRB Gauss-Hermite quadrature: %d nodes (%d per dimension)\n",
                 nrow(quad$G), n_quad))
     cat(sprintf("\n log evidence = %.4f\n", quad$log_evidence))

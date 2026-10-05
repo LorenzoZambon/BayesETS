@@ -22,9 +22,8 @@ test_that("Sobol scan log evidence matches quadrature for d = 2", {
   set.seed(4)
   y <- sim_ana(48, 4, alpha = 0.3, gamma = 0.2, sigma = 1.5)
   mc <- BETS:::coerce_model_components("ANA", 4)
-  ctrl <- BETS:::resolve_bets_control(list(integration_method = "quadrature",
-                                           n_quad = 25L, N_final = 50L), 4)
-  res_quad <- BETS:::fit_bets_models(y, mc, ctrl)$results[[1]]
+  ctrl <- BETS:::resolve_bets_control(list(n_quad = 25L, N_final = 50L), 4)
+  res_quad <- BETS:::fit_bets_models(y, mc, ctrl, integration = "quadrature")$results[[1]]
 
   # Same psi0 as fit_bets_models() uses for frequency > 1.
   ctrl$psi0 <- 0.5 * (mean(diff(y, lag = 4)^2) + mean(diff(y)^2))

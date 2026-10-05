@@ -19,12 +19,12 @@ bets_control_defaults <- function(freq = 1) {
   # Rule: N_draw = 128 * 2^(d-1); N_final = min(1000, 200 * 2^(d-1))
   # Pass a scalar to override uniformly; pass a length-4 vector for per-d control.
   # Both are resolved to a scalar inside each sampler via resolve_by_d(param, d).
-  # integration_method selects how theta is integrated out: "ais" (adaptive_is_rb)
-  # or "quadrature" (quadrature_rb). AIS draws N_draw points per iteration from a
-  # Student-t proposal with is_df degrees of freedom and scale is_scale * H^{-1},
-  # and stops once ESS >= min_ess (NULL -> N_draw / 4). n_quad = Gauss-Hermite
-  # nodes per dimension, also indexed by d, so the grid has n_quad[d]^d nodes
-  # (15, 81, 343, 625).
+  # AIS (adaptive_is_rb) draws N_draw points per iteration from a Student-t
+  # proposal with is_df degrees of freedom and scale is_scale * H^{-1}, and stops
+  # once ESS >= min_ess (NULL -> N_draw / 4). n_quad = Gauss-Hermite nodes per
+  # dimension for quadrature_rb, also indexed by d, so the grid has n_quad[d]^d
+  # nodes (15, 81, 343, 625). The integration method itself, the combination
+  # (BMA/stacking) and verbose are explicit arguments of bets().
   list(
     N_iter_max = 30,
     N_draw     = c(128L, 256L, 512L, 1024L),
@@ -38,10 +38,8 @@ bets_control_defaults <- function(freq = 1) {
     is_scale = 1.5,
     lr = 0.9,
     c_inflate_eta = 1,
-    verbose = 0,
     n_traj_forecast = 1000,
     prior_models = NULL,
-    integration_method = "ais",
     n_quad = c(15L, 9L, 7L, 5L)
   )
 }

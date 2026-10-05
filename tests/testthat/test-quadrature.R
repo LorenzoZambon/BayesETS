@@ -89,10 +89,10 @@ test_that("quadrature_rb() returns the same fields as adaptive_is_rb()", {
   }
 })
 
-test_that("bets() dispatches on integration_method and predicts", {
+test_that("bets() with integration = 'quadrature' fits and predicts", {
   set.seed(1)
-  fit <- bets(ts(rnorm(20)), model = "ANN",
-              control = list(integration_method = "quadrature"))
+  fit <- bets(ts(rnorm(20)), model = "AAdN", integration = "quadrature")
+  expect_equal(fit$fit$results[[1]]$integration, "quadrature")
   expect_true(is.na(fit$fit$results[[1]]$ess))
   fc <- predict(fit, h = 5)
   expect_true(all(is.finite(fc$mean)))
@@ -102,15 +102,9 @@ test_that("bets() dispatches on integration_method and predicts", {
 test_that("quadrature works with stacking (pointwise log-likelihoods)", {
   set.seed(1)
   y <- ts(rnorm(30))
-  ctrl <- BETS:::resolve_bets_control(list(integration_method = "quadrature", N_final = 50L))
+  ctrl <- BETS:::resolve_bets_control(list(N_final = 50L))
   fit <- BETS:::fit_bets_models(y, BETS:::coerce_model_components(list("ANN", "AAN"), 1),
-                                ctrl, method = "stacking")
+                                ctrl, combination = "stacking", integration = "quadrature")
   expect_equal(dim(fit$results[[1]]$log_lik_pointwise), c(50L, 30L))
   expect_equal(sum(fit$model_weights), 1, tolerance = 1e-8)
-})
-
-test_that("bets() rejects an unknown integration_method", {
-  expect_error(bets(ts(rnorm(20)), model = "ANN",
-                    control = list(integration_method = "mcmc")),
-               "should be one of")
 })

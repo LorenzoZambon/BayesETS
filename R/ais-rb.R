@@ -321,7 +321,7 @@ adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
     w <- w / sum(w)
     ess <- 1 / sum(w^2)
 
-    if (verbose >= 2) {
+    if (isTRUE(verbose >= 2)) {
       cat(sprintf("\n\nRao-Blackwellized AIS - iter %d\n", iter))
       cat(sprintf("\n ESS = %.1f\n", ess))
     }

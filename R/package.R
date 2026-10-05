@@ -16,20 +16,19 @@
 fit_bets_models <- function(y,
                             model_components,
                             ctrl,
-                            method = c("bma", "stacking")) {
-  method <- match.arg(method)
-  integration_method <- match.arg(ctrl$integration_method, c("ais", "quadrature"))
-  integrate_model <- switch(integration_method,
-                            ais        = adaptive_is_rb,
-                            quadrature = quadrature_rb)
+                            combination = c("bma", "stacking"),
+                            integration = c("auto", "quadrature", "ais"),
+                            verbose = 0) {
+  combination <- match.arg(combination)
+  integration <- match.arg(integration)
 
-  verbose <- ctrl$verbose
+  ctrl$verbose <- verbose   # read by the integrators
   psi0    <- ctrl$psi0
 
   freq <- stats::frequency(y)
 
   n_models <- length(model_components)
-  need_pointwise <- (method == "stacking")
+  need_pointwise <- (combination == "stacking")
 
   # set psi0 as either the MSE of the naive (if frequency = 1) or
   # the average of the MSEs of the naive and seasonal naive (if frequency > 1)
@@ -48,6 +47,10 @@ fit_bets_models <- function(y,
     if (verbose >= 2) cat(sprintf("\nFitting model %d of %d\n", i, n_models))
     t0 <- proc.time()[3]
 
+    integration_i <- resolve_integration(integration, model_components[[i]])
+    integrate_model <- switch(integration_i,
+                              ais        = adaptive_is_rb,
+                              quadrature = quadrature_rb)
     res_i <- integrate_model(
       y,
       model_components[[i]],
@@ -58,6 +61,7 @@ fit_bets_models <- function(y,
     fit_time_per_model[i] <- proc.time()[3] - t0
     results_list[[i]] <- res_i
     results_list[[i]]$model_components <- model_components[[i]]
+    results_list[[i]]$integration <- integration_i
     log_marginal_liks[i] <- res_i$log_evidence
     if (need_pointwise) log_lik_list[[i]] <- res_i$log_lik_pointwise
   }
@@ -86,7 +90,20 @@ fit_bets_models <- function(y,
   list(
     results = results_list,
     model_weights = model_weights,
+    combination = combination,
     fit_time_per_model = fit_time_per_model,
     elapsed_combination = elapsed_combination
   )
+}
+
+# Integration method for one model: "auto" uses quadrature for up to 2
+# smoothing parameters (most accurate and cheapest there) and AIS for 3-4
+# (quadrature has a downward bias there that grows with the dimension).
+resolve_integration <- function(integration, model_components) {
+  if (integration != "auto") return(integration)
+  trend  <- (model_components[[2]] == "A")
+  seas   <- (model_components[[3]] == "A")
+  damped <- (model_components[[4]] == "TRUE")
+  n_theta <- 1 + (if (trend) 1 + damped else 0) + seas
+  if (n_theta <= 2) "quadrature" else "ais"
 }

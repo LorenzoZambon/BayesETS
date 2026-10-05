@@ -35,10 +35,11 @@ sim_ets <- function(code, freq, seed) {
 }
 
 # Fit a single model specification through fit_bets_models() (which resolves psi0).
-fit_single <- function(y, code, control) {
+fit_single <- function(y, code, control, integration = "ais") {
   freq <- stats::frequency(y)
   ctrl <- BETS:::resolve_bets_control(control, freq)
-  BETS:::fit_bets_models(y, BETS:::coerce_model_components(code, freq), ctrl)$results[[1]]
+  BETS:::fit_bets_models(y, BETS:::coerce_model_components(code, freq), ctrl,
+                         integration = integration)$results[[1]]
 }
 
 # Five series per frequency, each fitted with its data-generating model;
@@ -62,8 +63,7 @@ for (freq in c(1, 4, 12)) {
 }
 
 ais_ref_ctrl <- list(N_draw = 8192L, min_ess = 4096, N_final = 5000L)
-quad_ctrl    <- list(integration_method = "quadrature", N_final = 5000L)
-ais_ctrl     <- list(N_final = 5000L)
+default_ctrl <- list(N_final = 5000L)
 
 # The AIS reference fits are expensive: computed once per series, shared by the tests.
 ais_ref_cache <- new.env()
@@ -84,7 +84,7 @@ test_that("quadrature agrees with AIS on log evidence and posterior mean of alph
   for (s in agreement_series) {
     res_ais  <- ais_reference(s)
     set.seed(s$seed)
-    res_quad <- fit_single(s$y, s$code, quad_ctrl)
+    res_quad <- fit_single(s$y, s$code, default_ctrl, integration = "quadrature")
     expect_lt(abs(res_quad$log_evidence - res_ais$log_evidence), 0.05,
               label = paste("|log evidence difference| for", s$label))
     expect_lt(abs(mean(res_quad$thetas[, "alpha"]) - mean(res_ais$thetas[, "alpha"])), 0.01,
@@ -97,7 +97,7 @@ test_that("default AIS agrees with the reference on log evidence and posterior m
   for (s in agreement_series) {
     res_ref <- ais_reference(s)
     set.seed(s$seed)
-    res_ais <- fit_single(s$y, s$code, ais_ctrl)
+    res_ais <- fit_single(s$y, s$code, default_ctrl)
     expect_lt(abs(res_ais$log_evidence - res_ref$log_evidence), 0.05,
               label = paste("|log evidence difference| for", s$label))
     expect_lt(abs(mean(res_ais$thetas[, "alpha"]) - mean(res_ref$thetas[, "alpha"])), 0.01,
@@ -113,10 +113,10 @@ test_that("quadrature log evidence is stable between n_quad = 5 and n_quad = 7",
   skip_on_cran()
   for (s in agreement_series) {
     set.seed(s$seed)
-    le5 <- fit_single(s$y, s$code, list(integration_method = "quadrature", n_quad = 5L,
-                                        N_final = 50L))$log_evidence
-    le7 <- fit_single(s$y, s$code, list(integration_method = "quadrature", n_quad = 7L,
-                                        N_final = 50L))$log_evidence
+    le5 <- fit_single(s$y, s$code, list(n_quad = 5L, N_final = 50L),
+                      integration = "quadrature")$log_evidence
+    le7 <- fit_single(s$y, s$code, list(n_quad = 7L, N_final = 50L),
+                      integration = "quadrature")$log_evidence
     expect_lt(abs(le7 - le5), 0.05,
               label = paste("|log evidence(n_quad = 7) - log evidence(n_quad = 5)| for", s$label))
   }
@@ -135,12 +135,13 @@ test_that("80% and 95% forecast quantiles agree with the reference within Monte 
     h <- max(6, 2 * freq)
 
     set.seed(1)
-    fit_ais  <- bets(y, control = list(N_final = 4000L, N_draw = 4096L, min_ess = 2048))
+    fit_ais  <- bets(y, integration = "ais",
+                     control = list(N_final = 4000L, N_draw = 4096L, min_ess = 2048))
     traj_ais <- BETS:::simulate_future_trajectories(fit_ais$fit, h = h, n_traj = n_traj)
 
-    for (method in c("quadrature", "ais")) {
+    for (method in c("auto", "quadrature", "ais")) {
       set.seed(1)
-      fit <- bets(y, control = list(N_final = 4000L, integration_method = method))
+      fit <- bets(y, integration = method, control = list(N_final = 4000L))
       fc <- predict(fit, h = h, level = c(80, 95), n_traj = n_traj)
       q_fit <- rbind(as.numeric(fc$lower[, "95"]), as.numeric(fc$lower[, "80"]),
                      as.numeric(fc$upper[, "80"]), as.numeric(fc$upper[, "95"]))
