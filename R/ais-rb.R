@@ -337,16 +337,17 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
 
   sigma2s <- posterior_scale[res_idx] / stats::rchisq(N_final, df = nu_n)
 
-  # Draw eta from MVN(mu_n, sigma^2 * Vn).
+  # Draw eta from MVN(mu_n, sigma^2 * Vn), all N_final draws at once.
   # Rn = L_M^{-1} (lower triangular), pre-computed in C++. The formula
   # crossprod(Rn, z) = t(Rn) %*% z gives draws with covariance t(Rn)*Rn = Vn.
-  etas <- matrix(0, nrow = N_final, ncol = n_eta)
-  for (j in seq_len(N_final)) {
-    idx <- res_idx[j]
-    R <- as.matrix(ml_res$Rn[, , idx])
-    z <- stats::rnorm(n_eta)
-    etas[j, ] <- ml_res$mu_n[, idx] + sqrt(sigma2s[j]) * crossprod(R, z)
-  }
+  # Column j of Z holds the standard normals of draw j (same RNG stream as one
+  # rnorm(n_eta) per draw); Z_draws[k, i, j] = Z[k, j], so that
+  # colSums(Rn_draws * Z_draws)[i, j] = (t(Rn_j) %*% Z[, j])[i].
+  Z <- matrix(stats::rnorm(n_eta * N_final), nrow = n_eta, ncol = N_final)
+  Rn_draws <- ml_res$Rn[, , res_idx, drop = FALSE]
+  Z_draws  <- array(Z[, rep(seq_len(N_final), each = n_eta)], dim = c(n_eta, n_eta, N_final))
+  etas <- t(ml_res$mu_n[, res_idx, drop = FALSE] +
+              sweep(colSums(Rn_draws * Z_draws), 2, sqrt(sigma2s), "*"))
 
   # Name the eta columns (C++ buffer order: s_m, s_{m-1}, ..., s_1)
   eta_col_names_cpp <- c("l", if (trend) "b",
