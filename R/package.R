@@ -18,10 +18,11 @@ fit_bets_models <- function(y,
                             ctrl,
                             method = c("bma", "stacking")) {
   method <- match.arg(method)
-  integration_method <- match.arg(ctrl$integration_method, c("ais", "quadrature"))
+  integration_method <- match.arg(ctrl$integration_method, c("ais", "quadrature", "laplace_is"))
   integrate_model <- switch(integration_method,
                             ais        = adaptive_is_rb,
-                            quadrature = quadrature_rb)
+                            quadrature = quadrature_rb,
+                            laplace_is = laplace_is_rb)
 
   verbose <- ctrl$verbose
   psi0    <- ctrl$psi0

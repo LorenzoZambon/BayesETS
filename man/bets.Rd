@@ -24,7 +24,7 @@ An object of class \code{"bets"}.
 \description{
 Estimates multiple ETS variants by drawing samples from the posterior distribution
 of the parameters, using adaptive importance sampling (AIS) or, optionally,
-adaptive Gauss-Hermite quadrature.
+adaptive Gauss-Hermite quadrature or importance sampling from a Laplace proposal.
 The resulting model fits are then combined into a single predictive distribution,
 either by Bayesian Model Averaging (BMA) or stacking.
 Currently only additive-error models are supported (i.e. \code{additive.only = TRUE}).
@@ -43,16 +43,25 @@ Default \code{NULL} resolves to \code{N_draw} (same budget
 as one AIS iteration), which already scales with problem dimension through
 \code{N_draw}. Powers of 2 are optimal for Sobol sequences.
 \item \code{integration_method}: How the smoothing parameters are integrated out of
-each model: \code{"ais"} (adaptive importance sampling, default) or
+each model: \code{"ais"} (adaptive importance sampling, default),
 \code{"quadrature"} (adaptive Gauss-Hermite quadrature on a grid centred at the
 posterior mode of the unconstrained parameters and scaled by the inverse
-Hessian there). Initial states and error variance are integrated out
-analytically in both cases. With \code{"quadrature"}, \code{N_draw}, \code{N_draw_max},
-\code{N_iter_max}, \code{min_ess} and \code{n_sobol} are not used.
+Hessian there) or \code{"laplace_is"} (a single importance sampling step from a
+Student-t proposal centred at the same mode, with the inverse Hessian as
+scale, sampled with randomised Sobol points). Initial states and error
+variance are integrated out analytically in all cases. With \code{"quadrature"}
+and \code{"laplace_is"}, \code{N_draw}, \code{N_draw_max}, \code{N_iter_max}, \code{min_ess} and
+\code{n_sobol} are not used.
 \item \code{n_quad}: Number of Gauss-Hermite nodes per dimension when
 \code{integration_method = "quadrature"}, indexed by the number \code{d} of smoothing
 parameters (1 to 4); the grid has \code{n_quad[d]^d} nodes. Default
 \code{c(15, 9, 7, 5)}; a scalar applies to all \code{d}.
+\item \code{n_is}: Number of draws when \code{integration_method = "laplace_is"}, indexed by
+\code{d} like \code{n_quad}. Default \code{c(128, 256, 512, 1024)}. Powers of 2 are optimal
+for Sobol sequences.
+\item \code{is_df}, \code{is_scale}: Degrees of freedom of the Student-t proposal of
+\code{"laplace_is"} (default 5) and inflation of its scale matrix relative to the
+inverse Hessian (default 1.5).
 }
 }
 }

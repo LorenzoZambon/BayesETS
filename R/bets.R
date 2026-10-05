@@ -2,7 +2,7 @@
 #'
 #' Estimates multiple ETS variants by drawing samples from the posterior distribution
 #' of the parameters, using adaptive importance sampling (AIS) or, optionally,
-#' adaptive Gauss-Hermite quadrature.
+#' adaptive Gauss-Hermite quadrature or importance sampling from a Laplace proposal.
 #' The resulting model fits are then combined into a single predictive distribution,
 #' either by Bayesian Model Averaging (BMA) or stacking.
 #' Currently only additive-error models are supported (i.e. `additive.only = TRUE`).
@@ -29,16 +29,25 @@
 #'   as one AIS iteration), which already scales with problem dimension through
 #'   `N_draw`. Powers of 2 are optimal for Sobol sequences.
 #' - `integration_method`: How the smoothing parameters are integrated out of
-#'   each model: `"ais"` (adaptive importance sampling, default) or
+#'   each model: `"ais"` (adaptive importance sampling, default),
 #'   `"quadrature"` (adaptive Gauss-Hermite quadrature on a grid centred at the
 #'   posterior mode of the unconstrained parameters and scaled by the inverse
-#'   Hessian there). Initial states and error variance are integrated out
-#'   analytically in both cases. With `"quadrature"`, `N_draw`, `N_draw_max`,
-#'   `N_iter_max`, `min_ess` and `n_sobol` are not used.
+#'   Hessian there) or `"laplace_is"` (a single importance sampling step from a
+#'   Student-t proposal centred at the same mode, with the inverse Hessian as
+#'   scale, sampled with randomised Sobol points). Initial states and error
+#'   variance are integrated out analytically in all cases. With `"quadrature"`
+#'   and `"laplace_is"`, `N_draw`, `N_draw_max`, `N_iter_max`, `min_ess` and
+#'   `n_sobol` are not used.
 #' - `n_quad`: Number of Gauss-Hermite nodes per dimension when
 #'   `integration_method = "quadrature"`, indexed by the number `d` of smoothing
 #'   parameters (1 to 4); the grid has `n_quad[d]^d` nodes. Default
 #'   `c(15, 9, 7, 5)`; a scalar applies to all `d`.
+#' - `n_is`: Number of draws when `integration_method = "laplace_is"`, indexed by
+#'   `d` like `n_quad`. Default `c(128, 256, 512, 1024)`. Powers of 2 are optimal
+#'   for Sobol sequences.
+#' - `is_df`, `is_scale`: Degrees of freedom of the Student-t proposal of
+#'   `"laplace_is"` (default 5) and inflation of its scale matrix relative to the
+#'   inverse Hessian (default 1.5).
 #'
 #' @return An object of class `"bets"`.
 #' @export

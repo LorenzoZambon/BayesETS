@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Agreement between integration_method = "quadrature" and "ais".
+# Agreement of integration_method = "quadrature" and "laplace_is" with "ais".
 #
 # Slow (high-budget AIS reference fits), so skipped on CRAN.  The AIS
 # reference uses n_sobol < min_ess, so that every reference estimate comes
@@ -65,6 +65,17 @@ for (freq in c(1, 4, 12)) {
 ais_ref_ctrl <- list(N_draw = 10000L, n_sobol = 1024L, min_ess = 5000,
                      N_final = 5000L, N_iter_max = 50)
 quad_ctrl    <- list(integration_method = "quadrature", N_final = 5000L)
+lis_ctrl     <- list(integration_method = "laplace_is", N_final = 5000L)
+
+# The AIS reference fits are expensive: computed once per series, shared by the tests.
+ais_ref_cache <- new.env()
+ais_reference <- function(s) {
+  if (is.null(ais_ref_cache[[s$label]])) {
+    set.seed(s$seed)
+    ais_ref_cache[[s$label]] <- fit_single(s$y, s$code, ais_ref_ctrl)
+  }
+  ais_ref_cache[[s$label]]
+}
 
 # ---------------------------------------------------------------------------
 # Log evidence and posterior mean of alpha
@@ -73,12 +84,25 @@ quad_ctrl    <- list(integration_method = "quadrature", N_final = 5000L)
 test_that("quadrature agrees with AIS on log evidence and posterior mean of alpha", {
   skip_on_cran()
   for (s in agreement_series) {
+    res_ais  <- ais_reference(s)
     set.seed(s$seed)
-    res_ais  <- fit_single(s$y, s$code, ais_ref_ctrl)
     res_quad <- fit_single(s$y, s$code, quad_ctrl)
     expect_lt(abs(res_quad$log_evidence - res_ais$log_evidence), 0.05,
               label = paste("|log evidence difference| for", s$label))
     expect_lt(abs(mean(res_quad$thetas[, "alpha"]) - mean(res_ais$thetas[, "alpha"])), 0.01,
+              label = paste("|posterior mean alpha difference| for", s$label))
+  }
+})
+
+test_that("Laplace IS agrees with AIS on log evidence and posterior mean of alpha", {
+  skip_on_cran()
+  for (s in agreement_series) {
+    res_ais <- ais_reference(s)
+    set.seed(s$seed)
+    res_lis <- fit_single(s$y, s$code, lis_ctrl)
+    expect_lt(abs(res_lis$log_evidence - res_ais$log_evidence), 0.05,
+              label = paste("|log evidence difference| for", s$label))
+    expect_lt(abs(mean(res_lis$thetas[, "alpha"]) - mean(res_ais$thetas[, "alpha"])), 0.01,
               label = paste("|posterior mean alpha difference| for", s$label))
   }
 })
@@ -114,22 +138,24 @@ test_that("80% and 95% forecast quantiles agree with AIS within Monte Carlo erro
 
     set.seed(1)
     fit_ais  <- bets(y, control = list(N_final = 4000L, min_ess = 1000, n_sobol = 512L))
-    set.seed(1)
-    fit_quad <- bets(y, control = list(N_final = 4000L, integration_method = "quadrature"))
-
-    fc <- predict(fit_quad, h = h, level = c(80, 95), n_traj = n_traj)
-    q_quad <- rbind(as.numeric(fc$lower[, "95"]), as.numeric(fc$lower[, "80"]),
-                    as.numeric(fc$upper[, "80"]), as.numeric(fc$upper[, "95"]))
     traj_ais <- BETS:::simulate_future_trajectories(fit_ais$fit, h = h, n_traj = n_traj)
 
-    # Probability level of each quadrature quantile under the AIS predictive
-    # sample, standardised by the binomial error of two samples of n_traj.
-    # Calibration: AIS against AIS (different seeds) gives rms(z) 0.8-1.3 and
-    # max|z| < 4; intervals 5% too wide give rms(z) > 2.4.
-    F_ais <- vapply(seq_len(h), function(j) colMeans(outer(traj_ais[, j], q_quad[, j], "<=")),
-                    numeric(length(probs)))
-    z <- (F_ais - probs) / sqrt(2 * probs * (1 - probs) / n_traj)
-    expect_lt(sqrt(mean(z^2)), 2, label = sprintf("rms(z) for frequency %d", freq))
-    expect_lt(max(abs(z)), 5, label = sprintf("max|z| for frequency %d", freq))
+    for (method in c("quadrature", "laplace_is")) {
+      set.seed(1)
+      fit <- bets(y, control = list(N_final = 4000L, integration_method = method))
+      fc <- predict(fit, h = h, level = c(80, 95), n_traj = n_traj)
+      q_fit <- rbind(as.numeric(fc$lower[, "95"]), as.numeric(fc$lower[, "80"]),
+                     as.numeric(fc$upper[, "80"]), as.numeric(fc$upper[, "95"]))
+
+      # Probability level of each quantile under the AIS predictive sample,
+      # standardised by the binomial error of two samples of n_traj.
+      # Calibration: AIS against AIS (different seeds) gives rms(z) 0.8-1.3 and
+      # max|z| < 4; intervals 5% too wide give rms(z) > 2.4.
+      F_ais <- vapply(seq_len(h), function(j) colMeans(outer(traj_ais[, j], q_fit[, j], "<=")),
+                      numeric(length(probs)))
+      z <- (F_ais - probs) / sqrt(2 * probs * (1 - probs) / n_traj)
+      expect_lt(sqrt(mean(z^2)), 2, label = sprintf("rms(z) for %s, frequency %d", method, freq))
+      expect_lt(max(abs(z)), 5, label = sprintf("max|z| for %s, frequency %d", method, freq))
+    }
   }
 })
