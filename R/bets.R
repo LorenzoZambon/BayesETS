@@ -33,9 +33,8 @@
 #'   `"quadrature"` (adaptive Gauss-Hermite quadrature on a grid centred at the
 #'   posterior mode of the unconstrained parameters and scaled by the inverse
 #'   Hessian there). Initial states and error variance are integrated out
-#'   analytically in both cases. With `"quadrature"`, the Sobol scan only
-#'   provides the starting point of the mode search, and `N_draw`, `N_draw_max`,
-#'   `N_iter_max` and `min_ess` are not used.
+#'   analytically in both cases. With `"quadrature"`, `N_draw`, `N_draw_max`,
+#'   `N_iter_max`, `min_ess` and `n_sobol` are not used.
 #' - `n_quad`: Number of Gauss-Hermite nodes per dimension when
 #'   `integration_method = "quadrature"`, indexed by the number `d` of smoothing
 #'   parameters (1 to 4); the grid has `n_quad[d]^d` nodes. Default

@@ -47,9 +47,8 @@ each model: \code{"ais"} (adaptive importance sampling, default) or
 \code{"quadrature"} (adaptive Gauss-Hermite quadrature on a grid centred at the
 posterior mode of the unconstrained parameters and scaled by the inverse
 Hessian there). Initial states and error variance are integrated out
-analytically in both cases. With \code{"quadrature"}, the Sobol scan only
-provides the starting point of the mode search, and \code{N_draw}, \code{N_draw_max},
-\code{N_iter_max} and \code{min_ess} are not used.
+analytically in both cases. With \code{"quadrature"}, \code{N_draw}, \code{N_draw_max},
+\code{N_iter_max}, \code{min_ess} and \code{n_sobol} are not used.
 \item \code{n_quad}: Number of Gauss-Hermite nodes per dimension when
 \code{integration_method = "quadrature"}, indexed by the number \code{d} of smoothing
 parameters (1 to 4); the grid has \code{n_quad[d]^d} nodes. Default

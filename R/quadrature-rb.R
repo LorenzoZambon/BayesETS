@@ -10,14 +10,11 @@
 
 quadrature_rb <- function(y, model_components, ctrl,
                           return_pointwise = FALSE) {
-  N_draw_raw  <- ctrl$N_draw    # only used to size the Sobol scan (start of the mode search)
   N_final_raw <- ctrl$N_final
-  n_sobol_raw <- ctrl$n_sobol
   n_quad_raw  <- ctrl$n_quad    # scalar or length-4 vector; resolved per d below
   nu0         <- ctrl$nu0
   phi_min     <- ctrl$phi_min
   phi_max     <- ctrl$phi_max
-  eta_df      <- ctrl$eta_df
   verbose     <- ctrl$verbose
 
   L <- length(y)
@@ -31,7 +28,6 @@ quadrature_rb <- function(y, model_components, ctrl,
   # Resolve dimension-dependent scalars now that d = n_theta is known.
   N_final <- resolve_by_d(N_final_raw, n_theta)
   n_quad  <- resolve_by_d(n_quad_raw,  n_theta)
-  n_sobol <- resolve_by_d(if (is.null(n_sobol_raw)) N_draw_raw else n_sobol_raw, n_theta)
 
   # ---- Set up eta prior ----
   prior <- init_rb_prior(y, model_components, theta_names, ctrl)
@@ -72,16 +68,10 @@ quadrature_rb <- function(y, model_components, ctrl,
   }
 
   # ---- Start of the mode search ----
-  # IS-weighted mean of the Sobol scan (the same scan that initialises AIS).
-  sobol_scan <- sobol_scan_rb(
-    y, model_components, theta_names, phi_min, phi_max,
-    n_sobol               = n_sobol,
-    eta0                  = eta0, V0 = V0, nu0 = nu0, psi0 = psi0, L = L,
-    log_prior_theta_const = log_prior_theta_const,
-    eta_df                = eta_df
-  )
-  z_start <- if (!sobol_scan$failed) as.numeric(sobol_scan$prop_params$mus) else rep(0, n_theta)
-  if (!all(is.finite(z_start))) z_start <- rep(0, n_theta)
+  # Heuristic start, as in init_joint_params(): z = 0 (centre of each range),
+  # except phi at z = 1 (damping usually high).  No Sobol scan: on M3 it gave
+  # the same log evidence (to 1e-4) at a large share of the cost.
+  z_start <- as.numeric(theta_names == "phi")
 
   # ---- Quadrature ----
   quad <- adaptive_gh_quadrature(log_g_rb, z_start, n_quad)
