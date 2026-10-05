@@ -125,7 +125,7 @@ coerce_model_components <- function(model, freq, additive.only = TRUE) {
       stop("Invalid seasonal component: allowed values are 'N', 'A', 'M'")
     }
 
-    if (m <= 1 && season_comp != "N") {
+    if (freq <= 1 && season_comp != "N") {
       stop("Seasonal models require frequency(y) > 1")
     }
 
