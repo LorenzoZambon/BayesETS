@@ -52,7 +52,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   log_prior_theta_const <- prior$log_prior_theta_const
 
   # ---- Initialize theta-only proposal ----
-  # Run sobol_scan_rb (iteration 0 under uniform/prior proposal).
+  # Run sobol_scan_rb (iteration 0 under a Logistic(0,1) proposal in unconstrained space).
   # If ESS already reaches min_ess the AIS loop is skipped entirely.
   sobol_scan <- sobol_scan_rb(
     y, model_components, theta_names, phi_min, phi_max,

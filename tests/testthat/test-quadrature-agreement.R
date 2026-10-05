@@ -3,10 +3,7 @@
 #
 # Slow (high-budget AIS reference fits), so skipped on CRAN.  The AIS
 # reference uses n_sobol < min_ess, so that every reference estimate comes
-# from the adaptive IS loop and never from the Sobol early exit: sobol_scan_rb()
-# weights its points as if they were uniform on the admissible region, which
-# they are not for d >= 2 (e.g. gamma = (1 - alpha) * u has density
-# 1 / (1 - alpha)), so its early-exit estimate is biased.
+# from the adaptive IS loop with a large budget, never from the Sobol scan.
 # ---------------------------------------------------------------------------
 
 # Simulate an additive ETS series with the components of `code`.

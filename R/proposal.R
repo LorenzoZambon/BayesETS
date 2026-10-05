@@ -167,37 +167,27 @@ sobol_scan_rb <- function(y, model_components, theta_names, phi_min, phi_max,
   damped <- (model_components[[4]] == "TRUE")
   y_vec  <- as.numeric(y)
 
-  heuristic_row <- {
-    hr <- rep(0, d)
-    names(hr) <- theta_names
-    if ("phi" %in% theta_names) hr["phi"] <- 1.0
-    hr
-  }
-
   # Generate Sobol points in (0,1)^d with digital-shift randomisation.
-  # qlogis maps them to unconstrained space where the marginal distributions
-  # are Logistic(0,1); after inv_logit the constrained coverage is uniform
-  # over the admissible ETS parameter region (= the prior support).
+  # qlogis maps them to unconstrained space, where each coordinate is
+  # Logistic(0,1).  For d >= 2 this proposal is NOT uniform on the admissible
+  # ETS region (e.g. gamma = (1 - alpha) * u has density 1 / (1 - alpha)), so
+  # the IS weights below use its exact density.  The points are not clipped:
+  # clipping piles the tail mass onto the clip boundary, which no density
+  # accounts for, and the tails (e.g. alpha near 1) can carry posterior mass.
+  # No fixed anchor point is appended either: a deterministic point inside a
+  # random sample biases the IS estimate.
   pts_01 <- tryCatch(
     qrng::sobol(n_sobol, d = d, randomize = "digital.shift"),
     error = function(e) NULL
   )
-  unc_max <- 4
-  if (!is.null(pts_01)) {
-    if (d == 1L) pts_01 <- matrix(pts_01, ncol = 1)
-    theta_unc_sobol <- matrix(
-      pmin(pmax(stats::qlogis(pts_01), -unc_max), unc_max),
-      nrow = n_sobol, ncol = d
-    )
-    colnames(theta_unc_sobol) <- theta_names
-  } else {
-    theta_unc_sobol <- matrix(0, nrow = 0, ncol = d)
-    colnames(theta_unc_sobol) <- theta_names
-  }
-  # Append heuristic anchor so the result is never worse than the heuristic.
-  theta_unc_mat <- rbind(theta_unc_sobol, heuristic_row)
-  rownames(theta_unc_mat) <- NULL
+  if (is.null(pts_01)) return(list(prop_params = NULL, ess = 0, failed = TRUE))
+  if (d == 1L) pts_01 <- matrix(pts_01, ncol = 1)
+  theta_unc_mat <- matrix(stats::qlogis(pts_01), nrow = n_sobol, ncol = d)
+  # Drop the (measure-zero) points that land exactly on 0 or 1.
+  theta_unc_mat <- theta_unc_mat[rowSums(!is.finite(theta_unc_mat)) == 0, , drop = FALSE]
+  colnames(theta_unc_mat) <- theta_names
   n_pts <- nrow(theta_unc_mat)
+  if (n_pts == 0L) return(list(prop_params = NULL, ess = 0, failed = TRUE))
 
   # Transform to constrained space.
   trans         <- transform_unconstrained_to_theta(theta_unc_mat, theta_names,
@@ -228,13 +218,12 @@ sobol_scan_rb <- function(y, model_components, theta_names, phi_min, phi_max,
   log_ml <- as.numeric(ml_res$log_marginal_lik)
   log_ml[!is.finite(log_ml)] <- -Inf
 
-  # IS weights.  Sobol proposal in constrained space = prior (both uniform over
-  # the admissible region), so:
-  #   w_i = p(y|θ_i) * p(θ_i) / q(θ_i) = p(y|θ_i) = exp(log_ml_i).
-  # We include log_prior_theta_const for numerical consistency with the AIS
-  # log_target convention; it is constant across particles and does not affect
-  # normalised weights or log_evidence (it cancels in both).
-  log_w <- log_ml + log_prior_theta_const
+  # IS weights w.r.t. Lebesgue measure on theta, as in the AIS loop:
+  #   w_i = p(y|θ_i) * p(θ_i) / q(θ_i),   q(θ) = q_z(z) / |dθ/dz|,
+  # with q_z the product of Logistic(0,1) densities and log|dθ/dz| = log_jac.
+  # mean(w) is then an RQMC estimate of p(y), used by the AIS early exit.
+  log_q_unc <- rowSums(stats::dlogis(theta_unc_mat, log = TRUE))
+  log_w <- log_ml + log_prior_theta_const + trans$log_jac - log_q_unc
   log_w[!is.finite(log_w)] <- -Inf
 
   lw_max <- max(log_w[is.finite(log_w)])
