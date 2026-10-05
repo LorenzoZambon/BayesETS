@@ -23,7 +23,8 @@ An object of class \code{"bets"}.
 }
 \description{
 Estimates multiple ETS variants by drawing samples from the posterior distribution
-of the parameters, using adaptive importance sampling (AIS).
+of the parameters, using adaptive importance sampling (AIS) or, optionally,
+adaptive Gauss-Hermite quadrature.
 The resulting model fits are then combined into a single predictive distribution,
 either by Bayesian Model Averaging (BMA) or stacking.
 Currently only additive-error models are supported (i.e. \code{additive.only = TRUE}).
@@ -41,6 +42,18 @@ list (...). Default: equal weights.
 Default \code{NULL} resolves to \code{N_draw} (same budget
 as one AIS iteration), which already scales with problem dimension through
 \code{N_draw}. Powers of 2 are optimal for Sobol sequences.
+\item \code{integration_method}: How the smoothing parameters are integrated out of
+each model: \code{"ais"} (adaptive importance sampling, default) or
+\code{"quadrature"} (adaptive Gauss-Hermite quadrature on a grid centred at the
+posterior mode of the unconstrained parameters and scaled by the inverse
+Hessian there). Initial states and error variance are integrated out
+analytically in both cases. With \code{"quadrature"}, the Sobol scan only
+provides the starting point of the mode search, and \code{N_draw}, \code{N_draw_max},
+\code{N_iter_max} and \code{min_ess} are not used.
+\item \code{n_quad}: Number of Gauss-Hermite nodes per dimension when
+\code{integration_method = "quadrature"}, indexed by the number \code{d} of smoothing
+parameters (1 to 4); the grid has \code{n_quad[d]^d} nodes. Default
+\code{c(15, 9, 7, 5)}; a scalar applies to all \code{d}.
 }
 }
 }

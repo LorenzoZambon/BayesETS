@@ -20,6 +20,9 @@ bets_control_defaults <- function(freq = 1) {
   # Rule: N_draw = 256 * 2^(d-1); N_final = min(1000, 200 * 2^(d-1))
   # Pass a scalar to override uniformly; pass a length-4 vector for per-d control.
   # Both are resolved to a scalar inside each sampler via resolve_by_d(param, d).
+  # integration_method selects how theta is integrated out: "ais" (adaptive_is_rb)
+  # or "quadrature" (quadrature_rb). n_quad = Gauss-Hermite nodes per dimension,
+  # also indexed by d, so the grid has n_quad[d]^d nodes (15, 81, 343, 625).
   list(
     N_iter_max = 30,
     N_draw     = c(256L, 512L, 1024L, 2048L),
@@ -41,7 +44,9 @@ bets_control_defaults <- function(freq = 1) {
     verbose = 0,
     n_traj_forecast = 1000,
     prior_models = NULL,
-    n_sobol = NULL
+    n_sobol = NULL,
+    integration_method = "ais",
+    n_quad = c(15L, 9L, 7L, 5L)
   )
 }
 

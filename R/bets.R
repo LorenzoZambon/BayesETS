@@ -1,7 +1,8 @@
 #' Fit a Bayesian ETS model
 #'
 #' Estimates multiple ETS variants by drawing samples from the posterior distribution
-#' of the parameters, using adaptive importance sampling (AIS).
+#' of the parameters, using adaptive importance sampling (AIS) or, optionally,
+#' adaptive Gauss-Hermite quadrature.
 #' The resulting model fits are then combined into a single predictive distribution,
 #' either by Bayesian Model Averaging (BMA) or stacking.
 #' Currently only additive-error models are supported (i.e. `additive.only = TRUE`).
@@ -27,6 +28,18 @@
 #'   Default `NULL` resolves to `N_draw` (same budget
 #'   as one AIS iteration), which already scales with problem dimension through
 #'   `N_draw`. Powers of 2 are optimal for Sobol sequences.
+#' - `integration_method`: How the smoothing parameters are integrated out of
+#'   each model: `"ais"` (adaptive importance sampling, default) or
+#'   `"quadrature"` (adaptive Gauss-Hermite quadrature on a grid centred at the
+#'   posterior mode of the unconstrained parameters and scaled by the inverse
+#'   Hessian there). Initial states and error variance are integrated out
+#'   analytically in both cases. With `"quadrature"`, the Sobol scan only
+#'   provides the starting point of the mode search, and `N_draw`, `N_draw_max`,
+#'   `N_iter_max` and `min_ess` are not used.
+#' - `n_quad`: Number of Gauss-Hermite nodes per dimension when
+#'   `integration_method = "quadrature"`, indexed by the number `d` of smoothing
+#'   parameters (1 to 4); the grid has `n_quad[d]^d` nodes. Default
+#'   `c(15, 9, 7, 5)`; a scalar applies to all `d`.
 #'
 #' @return An object of class `"bets"`.
 #' @export

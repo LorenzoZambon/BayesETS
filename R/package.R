@@ -6,6 +6,7 @@
 #' @importFrom Rcpp evalCpp
 #' @importFrom stats predict
 #' @importFrom qrng sobol
+#' @importFrom statmod gauss.quad
 #' @useDynLib BETS, .registration = TRUE
 "_PACKAGE"
 
@@ -17,6 +18,10 @@ fit_bets_models <- function(y,
                             ctrl,
                             method = c("bma", "stacking")) {
   method <- match.arg(method)
+  integration_method <- match.arg(ctrl$integration_method, c("ais", "quadrature"))
+  integrate_model <- switch(integration_method,
+                            ais        = adaptive_is_rb,
+                            quadrature = quadrature_rb)
 
   verbose <- ctrl$verbose
   psi0    <- ctrl$psi0
@@ -43,7 +48,7 @@ fit_bets_models <- function(y,
     if (verbose >= 2) cat(sprintf("\nFitting model %d of %d\n", i, n_models))
     t0 <- proc.time()[3]
 
-    res_i <- adaptive_is_rb(
+    res_i <- integrate_model(
       y,
       model_components[[i]],
       ctrl = ctrl,

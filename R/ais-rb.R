@@ -14,13 +14,11 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   min_ess_raw <- ctrl$min_ess   # NULL or scalar or vector; resolved per d below
   n_sobol_raw <- ctrl$n_sobol   # NULL (→ N_draw[d]) or scalar or vector
   nu0        <- ctrl$nu0
-  psi0       <- ctrl$psi0
   phi_min    <- ctrl$phi_min
   phi_max    <- ctrl$phi_max
   eta_df     <- ctrl$eta_df
   eta_df_incr_per_iter <- ctrl$eta_df_incr_per_iter
   lr         <- ctrl$lr
-  c_inflate_eta       <- ctrl$c_inflate_eta
   N_draw_mult         <- ctrl$N_draw_mult
   first_iter_mult_N   <- ctrl$first_iter_mult_N
   factor_inflate_Sigma <- ctrl$factor_inflate_Sigma
@@ -46,76 +44,12 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   n_sobol <- if (is.null(n_sobol_raw)) N_draw else resolve_by_d(n_sobol_raw, n_theta)
 
   # ---- Set up eta prior ----
-  # Use the existing heuristic for the initial states
-  eta_init <- init_eta_params(y, model_components, eta_df = eta_df)
-  eta_names_free <- names(eta_init$mus)  # l, [b,] [s1..s_{m-1}]
-
-  # For the RB formulation, eta includes the last seasonal state too
-  # eta = (l0, [b0,] [s1, ..., s_m])  -- 1-indexed; s_m is the sum-to-zero state
-  n_eta <- 1 + (if (trend) 1L else 0L) + (if (seas) m else 0L)
-
-  # Expand eta0 to include s_m = -sum(s1..s_{m-1})
-  eta0_free <- eta_init$mus
-  if (seas && m > 1) {
-    s_free_names <- grep("^s\\d+$", names(eta0_free), value = TRUE)
-    last_s <- -sum(eta0_free[s_free_names])
-    eta0_r_order <- c(eta0_free, last_s)
-    names(eta0_r_order)[length(eta0_r_order)] <- paste0("s", m)
-  } else {
-    eta0_r_order <- eta0_free
-  }
-
-  # Build full prior covariance matching the heuristic
-  # E[sigma^2] = psi0/(nu0-2) = psi0 (since nu0=3)
-  # So V0 = Sigma_heuristic / psi0
-  Sigma_heuristic_free <- eta_init$Sigma * c_inflate_eta
-
-  # Expand to include the m-th seasonal slot, dropping the standard ETS
-  # sum-to-zero constraint s_1 + ... + s_m = 0.  The design matrix X does NOT
-  # enforce the constraint: the recursion is invariant under the joint shift
-  # (l_0, s_1, ..., s_m) -> (l_0 + c, s_1 - c, ..., s_m - c), so X'X has rank
-  # n_eta - 1.  We use a diagonal prior on all m slots; the prior regularizes
-  # the unidentified shift direction without changing the predictive
-  # distribution, and keeps V0 (and hence V0^{-1}) positive definite, which
-  # is required by the Woodbury-based marginal_likelihood_rb kernel.
-  # Encoding the constraint via off-diagonal coupling would make V0 exactly
-  # rank-deficient and break inv_sympd(V0).
-  if (seas && m > 1) {
-    n_free <- length(eta0_free)
-    n_full <- n_eta
-    s_indices_free <- grep("^s\\d+$", names(eta0_free))
-    Sigma_full <- matrix(0, n_full, n_full)
-    Sigma_full[1:n_free, 1:n_free] <- Sigma_heuristic_free
-    # Independent prior for the m-th seasonal slot, with the same marginal scale as the others
-    Sigma_full[n_full, n_full] <- mean(diag(Sigma_heuristic_free)[s_indices_free])
-  } else {
-    Sigma_full <- Sigma_heuristic_free
-  }
-
-  # build_design_and_c_batch maps eta[s_offset + k] directly to times t ≡ k (mod m).
-  # Slot k=0 is used at t=0, m, 2m, … (oldest periodic factor = s_m in R naming).
-  # Slot k=m-1 is used at t=m-1, 2m-1, … (most-recent factor = s_1 in R naming).
-  # So the C++ ordering is: eta_cpp = (l, [b,] s_m, s_{m-1}, ..., s_1)
-  # We must reverse the seasonal block of eta0 and V0 before passing to C++.
-  if (seas && m > 1) {
-    s_offset_r <- (1 + (if (trend) 1L else 0L))  # 1-based offset to first seasonal in R order
-    non_s_idx <- seq_len(s_offset_r)
-    s_idx_r <- (s_offset_r + 1):(s_offset_r + m)  # s1..s_m in R order
-    s_idx_cpp <- rev(s_idx_r)  # s_m, s_{m-1}, ..., s1
-    reorder <- c(non_s_idx, s_idx_cpp)
-
-    eta0_cpp <- as.numeric(eta0_r_order[reorder])
-    V0 <- Sigma_full[reorder, reorder, drop = FALSE] / psi0
-  } else {
-    eta0_cpp <- as.numeric(eta0_r_order)
-    V0 <- Sigma_full / psi0
-  }
-  eta0 <- eta0_cpp
-
+  prior <- init_rb_prior(y, model_components, theta_names, ctrl)
+  eta0  <- prior$eta0
+  V0    <- prior$V0
+  psi0  <- prior$psi0
   # log_prior_theta_const: used both in sobol_scan_rb and in the AIS loop.
-  dummy_theta <- matrix(0, nrow = 1, ncol = n_theta)
-  colnames(dummy_theta) <- theta_names
-  log_prior_theta_const <- log_prior_theta_uniform(dummy_theta, phi_min, phi_max)[1]
+  log_prior_theta_const <- prior$log_prior_theta_const
 
   # ---- Initialize theta-only proposal ----
   # Run sobol_scan_rb (iteration 0 under uniform/prior proposal).
@@ -236,12 +170,10 @@ adaptive_is_rb <- function(y, model_components, ctrl,
     iter   <- 0L
     ml_res <- sobol_scan$ml_res
     theta_particles <- sobol_scan$theta_con
-    N_particles     <- sobol_scan$n_pts
     if (verbose >= 2)
       cat(sprintf("\n\nRB-AIS: Sobol early exit (ESS = %.1f)\n", ess))
   } else {
     theta_particles <- draws$theta
-    N_particles     <- N_draw
   }
 
   log_evidence <- max(log_w) + log(mean(exp(log_w - max(log_w))))
@@ -265,6 +197,137 @@ adaptive_is_rb <- function(y, model_components, ctrl,
 
   # ---- Step 6: Posterior Reconstruction ----
   if (do_time) t0 <- proc.time()[3]
+  post <- draw_rb_posterior(y, model_components, theta_particles, w, ml_res,
+                            N_final = N_final, nu0 = nu0,
+                            return_pointwise = return_pointwise)
+  if (do_time) timing$post <- timing$post + (proc.time()[3] - t0)
+
+  list(
+    thetas = post$thetas,
+    etas = post$etas,
+    states = post$states,
+    sigma2s = post$sigma2s,
+    ess = ess,
+    n_iter = iter,
+    prop_params = theta_prop_params,
+    log_evidence = log_evidence,
+    log_lik_pointwise = post$log_lik_pointwise,
+    timing = timing
+  )
+}
+
+
+##############################################################################
+### Shared Rao-Blackwell Helpers (used by adaptive_is_rb and quadrature_rb) ###
+
+# Conjugate prior for the initial states eta and sigma^2, plus the constant
+# log-density of the uniform theta prior.  Returns eta0 and V0 already in the
+# C++ ordering expected by build_design_and_c_batch / marginal_likelihood_rb.
+init_rb_prior <- function(y, model_components, theta_names, ctrl) {
+  psi0          <- ctrl$psi0
+  phi_min       <- ctrl$phi_min
+  phi_max       <- ctrl$phi_max
+  eta_df        <- ctrl$eta_df
+  c_inflate_eta <- ctrl$c_inflate_eta
+
+  m <- stats::frequency(y)
+  trend <- (model_components[[2]] == "A")
+  seas <- (model_components[[3]] == "A")
+  n_theta <- length(theta_names)
+
+  # Use the existing heuristic for the initial states
+  eta_init <- init_eta_params(y, model_components, eta_df = eta_df)
+  eta_names_free <- names(eta_init$mus)  # l, [b,] [s1..s_{m-1}]
+
+  # For the RB formulation, eta includes the last seasonal state too
+  # eta = (l0, [b0,] [s1, ..., s_m])  -- 1-indexed; s_m is the sum-to-zero state
+  n_eta <- 1 + (if (trend) 1L else 0L) + (if (seas) m else 0L)
+
+  # Expand eta0 to include s_m = -sum(s1..s_{m-1})
+  eta0_free <- eta_init$mus
+  if (seas && m > 1) {
+    s_free_names <- grep("^s\\d+$", names(eta0_free), value = TRUE)
+    last_s <- -sum(eta0_free[s_free_names])
+    eta0_r_order <- c(eta0_free, last_s)
+    names(eta0_r_order)[length(eta0_r_order)] <- paste0("s", m)
+  } else {
+    eta0_r_order <- eta0_free
+  }
+
+  # Build full prior covariance matching the heuristic
+  # E[sigma^2] = psi0/(nu0-2) = psi0 (since nu0=3)
+  # So V0 = Sigma_heuristic / psi0
+  Sigma_heuristic_free <- eta_init$Sigma * c_inflate_eta
+
+  # Expand to include the m-th seasonal slot, dropping the standard ETS
+  # sum-to-zero constraint s_1 + ... + s_m = 0.  The design matrix X does NOT
+  # enforce the constraint: the recursion is invariant under the joint shift
+  # (l_0, s_1, ..., s_m) -> (l_0 + c, s_1 - c, ..., s_m - c), so X'X has rank
+  # n_eta - 1.  We use a diagonal prior on all m slots; the prior regularizes
+  # the unidentified shift direction without changing the predictive
+  # distribution, and keeps V0 (and hence V0^{-1}) positive definite, which
+  # is required by the Woodbury-based marginal_likelihood_rb kernel.
+  # Encoding the constraint via off-diagonal coupling would make V0 exactly
+  # rank-deficient and break inv_sympd(V0).
+  if (seas && m > 1) {
+    n_free <- length(eta0_free)
+    n_full <- n_eta
+    s_indices_free <- grep("^s\\d+$", names(eta0_free))
+    Sigma_full <- matrix(0, n_full, n_full)
+    Sigma_full[1:n_free, 1:n_free] <- Sigma_heuristic_free
+    # Independent prior for the m-th seasonal slot, with the same marginal scale as the others
+    Sigma_full[n_full, n_full] <- mean(diag(Sigma_heuristic_free)[s_indices_free])
+  } else {
+    Sigma_full <- Sigma_heuristic_free
+  }
+
+  # build_design_and_c_batch maps eta[s_offset + k] directly to times t ≡ k (mod m).
+  # Slot k=0 is used at t=0, m, 2m, … (oldest periodic factor = s_m in R naming).
+  # Slot k=m-1 is used at t=m-1, 2m-1, … (most-recent factor = s_1 in R naming).
+  # So the C++ ordering is: eta_cpp = (l, [b,] s_m, s_{m-1}, ..., s_1)
+  # We must reverse the seasonal block of eta0 and V0 before passing to C++.
+  if (seas && m > 1) {
+    s_offset_r <- (1 + (if (trend) 1L else 0L))  # 1-based offset to first seasonal in R order
+    non_s_idx <- seq_len(s_offset_r)
+    s_idx_r <- (s_offset_r + 1):(s_offset_r + m)  # s1..s_m in R order
+    s_idx_cpp <- rev(s_idx_r)  # s_m, s_{m-1}, ..., s1
+    reorder <- c(non_s_idx, s_idx_cpp)
+
+    eta0_cpp <- as.numeric(eta0_r_order[reorder])
+    V0 <- Sigma_full[reorder, reorder, drop = FALSE] / psi0
+  } else {
+    eta0_cpp <- as.numeric(eta0_r_order)
+    V0 <- Sigma_full / psi0
+  }
+
+  # Uniform theta prior on the admissible region: its log-density is constant.
+  dummy_theta <- matrix(0, nrow = 1, ncol = n_theta)
+  colnames(dummy_theta) <- theta_names
+  log_prior_theta_const <- log_prior_theta_uniform(dummy_theta, phi_min, phi_max)[1]
+
+  list(
+    eta0 = eta0_cpp,
+    V0 = V0,
+    psi0 = psi0,
+    n_eta = n_eta,
+    log_prior_theta_const = log_prior_theta_const
+  )
+}
+
+# Posterior reconstruction from weighted theta particles: resample N_final
+# particles with probabilities w, then draw sigma^2 and eta from their
+# conditional posteriors.  ml_res must come from marginal_likelihood_rb(...,
+# return_posterior = TRUE) evaluated at theta_particles (one column/slice per row).
+draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
+                              N_final, nu0, return_pointwise = FALSE) {
+  L <- length(y)
+  m <- stats::frequency(y)
+  trend <- (model_components[[2]] == "A")
+  seas <- (model_components[[3]] == "A")
+  damped <- (model_components[[4]] == "TRUE")
+  n_eta <- 1 + (if (trend) 1L else 0L) + (if (seas) m else 0L)
+  N_particles <- nrow(theta_particles)
+
   res_idx <- sample(N_particles, size = N_final, replace = TRUE, prob = w)
   thetas <- theta_particles[res_idx, , drop = FALSE]
 
@@ -315,19 +378,13 @@ adaptive_is_rb <- function(y, model_components, ctrl,
     sd_mat <- matrix(sqrt(sigma2s), nrow = nrow(E), ncol = ncol(E), byrow = FALSE)
     log_lik_pointwise <- stats::dnorm(E, mean = 0, sd = sd_mat, log = TRUE)
   }
-  if (do_time) timing$post <- timing$post + (proc.time()[3] - t0)
 
   list(
     thetas = thetas,
     etas = etas,
     states = states,
     sigma2s = sigma2s,
-    ess = ess,
-    n_iter = iter,
-    prop_params = theta_prop_params,
-    log_evidence = log_evidence,
-    log_lik_pointwise = log_lik_pointwise,
-    timing = timing
+    log_lik_pointwise = log_lik_pointwise
   )
 }
 
