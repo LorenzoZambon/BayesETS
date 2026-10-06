@@ -83,6 +83,13 @@ test_that("bets() rejects invalid combination, integration and verbose", {
   expect_error(bets(ts(rnorm(20)), model = "ANN", verbose = "yes"), "verbose must be")
 })
 
+test_that("bets() works for series with frequency < 1 (decennial uspop)", {
+  set.seed(1)
+  fit <- bets(uspop)
+  expect_equal(sum(fit$fit$model_weights), 1, tolerance = 1e-8)
+  expect_true(all(is.finite(predict(fit, h = 3)$mean)))
+})
+
 test_that("bets() fit contains one result per model", {
   set.seed(1)
   fit <- bets(ts(rnorm(20)), model = list("ANN", "AAN"))

@@ -29,11 +29,13 @@ quadrature_rb <- function(y, model_components, ctrl,
   # ---- Set up eta prior and the integrand ----
   prior <- init_rb_prior(y, model_components, theta_names, ctrl)
   log_g_rb <- make_log_g_rb(y, model_components, theta_names, ctrl, prior)
-  z_start <- heuristic_z_start(theta_names)
 
-  # ---- Quadrature ----
-  quad <- adaptive_gh_quadrature(log_g_rb, z_start, n_quad)
-  timing <- c(quad$timing, list(post = 0))
+  # ---- Quadrature, starting the mode search at the best point of a prior scan ----
+  t0 <- proc.time()[3]
+  scan <- prior_scan(log_g_rb, theta_names, ctrl$n_scan)
+  t_scan <- proc.time()[3] - t0
+  quad <- adaptive_gh_quadrature(log_g_rb, scan$Z[1, ], n_quad)
+  timing <- c(list(scan = t_scan), quad$timing, list(post = 0))
 
   if (isTRUE(verbose >= 2)) {
     cat(sprintf("\n\nRB Gauss-Hermite quadrature: %d nodes (%d per dimension)\n",
@@ -134,11 +136,39 @@ make_log_g_rb <- function(y, model_components, theta_names, ctrl, prior) {
   }
 }
 
-# Heuristic start of the mode search: z = 0 (centre of each range), except phi
-# at z = 1 (damping usually high).  No Sobol scan: on M3 it gave the same log
-# evidence (to 1e-4) at a large share of the cost.
+# Cheap scan of the prior that starts the mode search: the heuristic point, a
+# small-smoothing point and n_scan randomised Sobol points (each unconstrained
+# coordinate Logistic(0,1), i.e. uniform on its transformed range), evaluated
+# in one batch.  Returns all candidates and their log g, best first; the best
+# one starts laplace_mode().  Starting there avoids local modes in the unstable
+# region of seasonal trend models, where the recursion explodes and log g is
+# rough (the heuristic point lies there for monthly AAA).  The other
+# candidates are meant to seed a future search for further modes.
+prior_scan <- function(log_g_fn, theta_names, n_scan = 64) {
+  d <- length(theta_names)
+  Z <- rbind(heuristic_z_start(theta_names), small_smoothing_z(theta_names))
+  if (n_scan > 0) {
+    u <- matrix(qrng::sobol(n_scan, d = d, randomize = "digital.shift"), ncol = d)
+    Z <- rbind(Z, stats::qlogis(u))
+  }
+  Z <- Z[rowSums(!is.finite(Z)) == 0, , drop = FALSE]
+  log_g <- log_g_fn(Z)$log_g
+  log_g[!is.finite(log_g)] <- -Inf
+  o <- order(log_g, decreasing = TRUE)
+  list(Z = Z[o, , drop = FALSE], log_g = log_g[o])
+}
+
+# Heuristic point: z = 0 (centre of each range), except phi at z = 1 (damping
+# usually high).
 heuristic_z_start <- function(theta_names) {
   as.numeric(theta_names == "phi")
+}
+
+# Small smoothing: alpha = 0.2, beta = 0.05 * alpha, gamma = 0.05 * (1 - alpha),
+# phi at z = 1.
+small_smoothing_z <- function(theta_names) {
+  z <- c(alpha = stats::qlogis(0.2), beta = stats::qlogis(0.05), phi = 1, gamma = stats::qlogis(0.05))
+  unname(z[theta_names])
 }
 
 # Mode zhat of log g and Hessian H of -log g there, plus Lmat with

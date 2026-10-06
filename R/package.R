@@ -39,10 +39,12 @@ fit_bets_models <- function(y,
   }
 
   # Centre the series at its initial level (the prior mean of l0, see
-  # init_eta_params()).  The additive model is location-equivariant: only the
-  # level states shift, so the evidence and theta posterior are unchanged,
-  # while the sufficient statistics of the C++ kernels stay small.
-  y_shift <- mean(y[seq_len(min(freq, length(y)))])
+  # init_eta_params(): mean of the first frequency observations, at least one,
+  # since the frequency can be < 1, e.g. decennial data).  The additive model
+  # is location-equivariant: only the level states shift, so the evidence and
+  # theta posterior are unchanged, while the sufficient statistics of the C++
+  # kernels stay small.
+  y_shift <- mean(y[seq_len(max(1L, min(as.integer(freq), length(y))))])
   y_centred <- y - y_shift
 
   results_list <- vector("list", n_models)

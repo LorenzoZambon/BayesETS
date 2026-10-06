@@ -80,6 +80,9 @@ indexed by \code{d} like \code{N_draw}. Default \code{c(100, 300, 500, 500)}.
 \item \code{is_df}, \code{is_scale}: Degrees of freedom of the Student-t proposal of AIS
 (default 5) and inflation of its initial scale matrix relative to the
 inverse Hessian (default 4).
+\item \code{n_scan}: Number of points of the prior scan (randomised Sobol points,
+evaluated in one batch) whose best point starts the search for the
+posterior mode, for both methods. Default 64.
 \item \code{n_quad}: Number of Gauss-Hermite nodes per dimension for quadrature,
 indexed by \code{d} like \code{N_draw}; the grid has \code{n_quad[d]^d} nodes. Default
 \code{c(21, 21, 9, 7)}.

@@ -44,7 +44,8 @@ bets_control_defaults <- function(freq = 1) {
     c_inflate_eta = 1,
     prior_models = NULL,
     integration = "auto",
-    n_quad = c(21L, 21L, 9L, 7L)
+    n_quad = c(21L, 21L, 9L, 7L),
+    n_scan = 64L
   )
 }
 

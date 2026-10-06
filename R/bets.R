@@ -56,6 +56,9 @@
 #' - `is_df`, `is_scale`: Degrees of freedom of the Student-t proposal of AIS
 #'   (default 5) and inflation of its initial scale matrix relative to the
 #'   inverse Hessian (default 4).
+#' - `n_scan`: Number of points of the prior scan (randomised Sobol points,
+#'   evaluated in one batch) whose best point starts the search for the
+#'   posterior mode, for both methods. Default 64.
 #' - `n_quad`: Number of Gauss-Hermite nodes per dimension for quadrature,
 #'   indexed by `d` like `N_draw`; the grid has `n_quad[d]^d` nodes. Default
 #'   `c(21, 21, 9, 7)`.

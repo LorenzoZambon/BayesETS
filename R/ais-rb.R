@@ -39,13 +39,16 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   prior <- init_rb_prior(y, model_components, theta_names, ctrl)
   log_g_rb <- make_log_g_rb(y, model_components, theta_names, ctrl, prior)
 
-  # ---- Adaptive importance sampling ----
-  ais <- adaptive_importance_sampling(log_g_rb, heuristic_z_start(theta_names),
+  # ---- Adaptive importance sampling, starting the mode search at the best point of a prior scan ----
+  t0 <- proc.time()[3]
+  scan <- prior_scan(log_g_rb, theta_names, ctrl$n_scan)
+  t_scan <- proc.time()[3] - t0
+  ais <- adaptive_importance_sampling(log_g_rb, scan$Z[1, ],
                                       n_draw = N_draw, min_ess = min_ess,
                                       df = is_df, scale = is_scale,
                                       n_iter_max = N_iter_max, lr = lr,
                                       verbose = verbose)
-  timing <- c(ais$timing, list(post = 0))
+  timing <- c(list(scan = t_scan), ais$timing, list(post = 0))
 
   prop_params <- ais$proposal
   names(prop_params$mus) <- theta_names

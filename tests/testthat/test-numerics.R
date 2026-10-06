@@ -34,6 +34,33 @@ test_that("lost-precision evaluations are invalid, not spikes (uncentred co2)", 
   expect_lt(max(lg_raw), max(lg_centred) + 1)
 })
 
+test_that("prior_scan() returns the candidates sorted by log g", {
+  tn <- c("alpha", "beta", "gamma")
+  log_g <- function(Z) list(log_g = -rowSums((Z - 0.3)^2))
+  set.seed(1)
+  s <- BETS:::prior_scan(log_g, tn, n_scan = 16)
+  expect_equal(dim(s$Z), c(18L, 3L))   # heuristic + small smoothing + 16 Sobol points
+  expect_false(is.unsorted(rev(s$log_g)))
+  expect_true(any(apply(s$Z, 1, function(z) all(z == BETS:::heuristic_z_start(tn)))))
+  expect_true(any(apply(s$Z, 1, function(z) all(z == BETS:::small_smoothing_z(tn)))))
+})
+
+test_that("the mode search is not trapped in the unstable region (nottem, AAN)", {
+  # From the heuristic start, L-BFGS-B stops 15.8 log units below the best
+  # point of a 1024-point prior scan; from the default 64-point scan it does not.
+  y <- nottem - mean(nottem[1:12])
+  mc <- c("A", "A", "N", "FALSE")
+  tn <- c("alpha", "beta")
+  ctrl <- BETS:::resolve_bets_control(list(), 12)
+  ctrl$psi0 <- 0.5 * (mean(diff(nottem, lag = 12)^2) + mean(diff(nottem)^2))
+  lg <- BETS:::make_log_g_rb(y, mc, tn, ctrl, BETS:::init_rb_prior(y, mc, tn, ctrl))
+  set.seed(1)
+  best_of_1024 <- BETS:::prior_scan(lg, tn, n_scan = 1024)$log_g[1]
+  set.seed(2)
+  lap <- BETS:::laplace_mode(lg, BETS:::prior_scan(lg, tn, n_scan = 64)$Z[1, ])
+  expect_gt(lg(matrix(lap$zhat, 1))$log_g, best_of_1024 - 1)
+})
+
 test_that("centring the series leaves the evidence unchanged and restores the level", {
   set.seed(2)
   y <- ts(1000 + cumsum(rnorm(40)), frequency = 1)
