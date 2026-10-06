@@ -16,31 +16,35 @@ resolve_by_d <- function(param, d) {
 
 bets_control_defaults <- function(freq = 1) {
   # N_draw and N_final are dimension-indexed vectors (index = theta dim d = 1..4).
-  # Rule: N_draw = 128 * 2^(d-1); N_final = min(1000, 200 * 2^(d-1))
+  # Rule: N_draw = 128 * 2^(d-1). N_final (posterior draws kept per model) keeps
+  # their share of the forecast-interval error at about 1% of the 95% interval
+  # width for every d (well below the noise of the default 1000 trajectories).
   # Pass a scalar to override uniformly; pass a length-4 vector for per-d control.
   # Both are resolved to a scalar inside each sampler via resolve_by_d(param, d).
+  # integration = "auto" uses quadrature for d <= 2 and AIS for d >= 3.
   # AIS (adaptive_is_rb) draws N_draw points per iteration from a Student-t
   # proposal with is_df degrees of freedom and scale is_scale * H^{-1}, and stops
   # once ESS >= min_ess (NULL -> N_draw / 4). n_quad = Gauss-Hermite nodes per
   # dimension for quadrature_rb, also indexed by d, so the grid has n_quad[d]^d
-  # nodes (15, 81, 343, 625). The integration method itself, the combination
-  # (BMA/stacking) and verbose are explicit arguments of bets().
+  # nodes (21, 441, 729, 2401). is_scale and n_quad[1:2] were tuned on M3 and
+  # tourism series (2026-10). The combination (BMA/stacking) and verbose are
+  # explicit arguments of bets().
   list(
     N_iter_max = 30,
     N_draw     = c(128L, 256L, 512L, 1024L),
-    N_final    = c(200L, 400L, 800L, 1000L),
+    N_final    = c(200L, 300L, 500L, 500L),
     nu0 = 3,
     psi0 = NULL,
     phi_min = 0.8,
     phi_max = 0.98,
     min_ess = NULL,
     is_df = 5,
-    is_scale = 1.5,
+    is_scale = 4,
     lr = 0.9,
     c_inflate_eta = 1,
-    n_traj_forecast = 1000,
     prior_models = NULL,
-    n_quad = c(15L, 9L, 7L, 5L)
+    integration = "auto",
+    n_quad = c(21L, 21L, 9L, 7L)
   )
 }
 

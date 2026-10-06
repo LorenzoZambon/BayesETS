@@ -12,10 +12,6 @@
 #'   or pass a specific model specification (e.g., "AAdN").
 #' @param combination How the model fits are combined: `"bma"` (Bayesian Model
 #'   Averaging, default) or `"stacking"`.
-#' @param integration How the smoothing parameters are integrated out of each
-#'   model: `"auto"` (default), `"quadrature"` or `"ais"`. `"auto"` uses
-#'   quadrature for models with up to 2 smoothing parameters (ANN, AAN, ANA) and
-#'   AIS for models with 3 or 4 (AAdN, AAA, AAdA). See **Details**.
 #' @param additive.only Logical; if `TRUE` (default), only additive-error models are considered.
 #' Currently, setting `additive.only = FALSE` will result in an error.
 #' @param verbose `0` (default) prints nothing, `1` prints the model weights,
@@ -27,13 +23,17 @@
 #' @details
 #' ## Integration methods
 #'
-#' Both methods start from the posterior mode of the unconstrained smoothing
-#' parameters and the inverse Hessian there. Quadrature integrates on a
-#' Gauss-Hermite grid scaled by the inverse Hessian. AIS draws from a Student-t
-#' proposal centred at the mode, sampled with randomised Sobol points, and
-#' adapts it only while the effective sample size is below `min_ess` (usually a
-#' single step suffices). Initial states and error variance are integrated out
-#' analytically in both cases.
+#' The smoothing parameters of each model are integrated out either by adaptive
+#' Gauss-Hermite quadrature or by adaptive importance sampling (AIS). Both start
+#' from the posterior mode of the unconstrained smoothing parameters and the
+#' inverse Hessian there. Quadrature integrates on a Gauss-Hermite grid scaled
+#' by the inverse Hessian. AIS draws from a Student-t proposal centred at the
+#' mode, sampled with randomised Sobol points, and adapts it only while the
+#' effective sample size is below `min_ess` (usually a single step suffices).
+#' Initial states and error variance are integrated out analytically in both
+#' cases. By default (`integration = "auto"` in `control`), quadrature is used
+#' for models with up to 2 smoothing parameters (ANN, AAN, ANA) and AIS for
+#' models with 3 or 4 (AAdN, AAA, AAdA), where quadrature is less accurate.
 #'
 #' ## Control parameters
 #'
@@ -41,25 +41,30 @@
 #'
 #' - `prior_models`: optional prior model probabilities for BMA, passed as a
 #' list (...). Default: equal weights.
+#' - `integration`: `"auto"` (default, see above), `"quadrature"` or `"ais"`,
+#'   to force one method for all models. Forcing quadrature is not recommended
+#'   for models with 3 or more smoothing parameters: its error grows with the
+#'   dimension and can be large for strongly non-Gaussian posteriors.
 #' - `N_draw`: Number of AIS draws per iteration, indexed by the number `d` of
 #'   smoothing parameters (1 to 4). Default `c(128, 256, 512, 1024)`; a scalar
 #'   applies to all `d`. Powers of 2 are optimal for Sobol sequences.
 #' - `min_ess`: AIS stops as soon as the effective sample size of all draws so
 #'   far reaches `min_ess`. Default `NULL` resolves to `N_draw / 4`. Models that
 #'   do not reach it within `N_iter_max` iterations (default 30) get zero weight.
+#' - `N_final`: Number of posterior draws kept per model (used by [predict.bets()]),
+#'   indexed by `d` like `N_draw`. Default `c(100, 300, 500, 500)`.
 #' - `is_df`, `is_scale`: Degrees of freedom of the Student-t proposal of AIS
 #'   (default 5) and inflation of its initial scale matrix relative to the
-#'   inverse Hessian (default 1.5).
+#'   inverse Hessian (default 4).
 #' - `n_quad`: Number of Gauss-Hermite nodes per dimension for quadrature,
 #'   indexed by `d` like `N_draw`; the grid has `n_quad[d]^d` nodes. Default
-#'   `c(15, 9, 7, 5)`.
+#'   `c(21, 21, 9, 7)`.
 #'
 #' @return An object of class `"bets"`.
 #' @export
 bets <- function(y,
                  model = "ZZZ",
                  combination = c("bma", "stacking"),
-                 integration = c("auto", "quadrature", "ais"),
                  additive.only = TRUE,
                  verbose = 0,
                  control = list()) {
@@ -77,7 +82,6 @@ bets <- function(y,
   }
 
   combination <- match.arg(combination)
-  integration <- match.arg(integration)
   if (!(is.numeric(verbose) || is.logical(verbose)) || length(verbose) != 1 || is.na(verbose)) {
     stop("verbose must be 0, 1, 2, TRUE or FALSE")
   }
@@ -85,6 +89,7 @@ bets <- function(y,
   freq <- stats::frequency(y)
 
   ctrl <- resolve_bets_control(control, freq)
+  integration <- match.arg(ctrl$integration, c("auto", "quadrature", "ais"))
   model_components <- coerce_model_components(model, freq, additive.only)
 
   fit <- fit_bets_models(

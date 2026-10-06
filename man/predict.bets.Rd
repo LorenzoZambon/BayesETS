@@ -4,7 +4,7 @@
 \alias{predict.bets}
 \title{Predict from a BETS model}
 \usage{
-\method{predict}{bets}(object, newdata = NULL, h = 10, level = c(80, 95), n_traj = NULL, ...)
+\method{predict}{bets}(object, newdata = NULL, h = 10, level = c(80, 95), n_traj = 1000, ...)
 }
 \arguments{
 \item{object}{A fitted object from \code{\link[=bets]{bets()}}.}
@@ -16,7 +16,10 @@ since BETS forecasts forward from the end of the training series.}
 
 \item{level}{Confidence levels for intervals.}
 
-\item{n_traj}{Number of simulated trajectories.}
+\item{n_traj}{Number of simulated trajectories (default 1000). The Monte
+Carlo error of the interval bounds decreases as \code{1 / sqrt(n_traj)}: with
+the default it is about 2\% of the width of the 95\% interval, and 4 times
+more trajectories halve it (the cost grows linearly with \code{n_traj * h}).}
 
 \item{...}{Unused.}
 }

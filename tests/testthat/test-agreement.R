@@ -146,13 +146,13 @@ test_that("80% and 95% forecast quantiles agree with the reference within Monte 
     h <- max(6, 2 * freq)
 
     set.seed(1)
-    fit_ais  <- bets(y, integration = "ais",
-                     control = list(N_final = 4000L, N_draw = 4096L, min_ess = 2048))
+    fit_ais  <- bets(y, control = list(integration = "ais", N_final = 4000L,
+                                       N_draw = 4096L, min_ess = 2048))
     traj_ais <- BETS:::simulate_future_trajectories(fit_ais$fit, h = h, n_traj = n_traj)
 
     for (method in c("auto", "quadrature", "ais")) {
       set.seed(1)
-      fit <- bets(y, integration = method, control = list(N_final = 4000L))
+      fit <- bets(y, control = list(integration = method, N_final = 4000L))
       fc <- predict(fit, h = h, level = c(80, 95), n_traj = n_traj)
       q_fit <- rbind(as.numeric(fc$lower[, "95"]), as.numeric(fc$lower[, "80"]),
                      as.numeric(fc$upper[, "80"]), as.numeric(fc$upper[, "95"]))

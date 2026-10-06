@@ -89,9 +89,9 @@ test_that("quadrature_rb() returns the same fields as adaptive_is_rb()", {
   }
 })
 
-test_that("bets() with integration = 'quadrature' fits and predicts", {
+test_that("bets() with control integration = 'quadrature' fits and predicts", {
   set.seed(1)
-  fit <- bets(ts(rnorm(20)), model = "AAdN", integration = "quadrature")
+  fit <- bets(ts(rnorm(20)), model = "AAdN", control = list(integration = "quadrature"))
   expect_equal(fit$fit$results[[1]]$integration, "quadrature")
   expect_true(is.na(fit$fit$results[[1]]$ess))
   fc <- predict(fit, h = 5)

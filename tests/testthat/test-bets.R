@@ -62,7 +62,7 @@ test_that("bets() model_weights sum to 1 under stacking", {
   expect_equal(sum(fit$fit$model_weights), 1, tolerance = 1e-8)
 })
 
-test_that("bets() integration = 'auto' uses quadrature for d <= 2 and AIS for d >= 3", {
+test_that("bets() default integration ('auto') uses quadrature for d <= 2 and AIS for d >= 3", {
   set.seed(1)
   y <- ts(50 + cumsum(rnorm(32)) + rep(c(3, -1, -4, 2), 8), frequency = 4)
   fit <- bets(y, model = list("ANN", "AAN", "ANA", "AAdN", "AAA", "AAdA"))
@@ -70,15 +70,16 @@ test_that("bets() integration = 'auto' uses quadrature for d <= 2 and AIS for d 
   expect_equal(used, c("quadrature", "quadrature", "quadrature", "ais", "ais", "ais"))
 })
 
-test_that("bets() integration forces one method for all models", {
+test_that("control integration forces one method for all models", {
   set.seed(1)
-  fit <- bets(ts(rnorm(20)), model = list("ANN", "AAdN"), integration = "ais")
+  fit <- bets(ts(rnorm(20)), model = list("ANN", "AAdN"), control = list(integration = "ais"))
   expect_equal(vapply(fit$fit$results, `[[`, character(1), "integration"), c("ais", "ais"))
 })
 
 test_that("bets() rejects invalid combination, integration and verbose", {
   expect_error(bets(ts(rnorm(20)), model = "ANN", combination = "avg"), "should be one of")
-  expect_error(bets(ts(rnorm(20)), model = "ANN", integration = "mcmc"), "should be one of")
+  expect_error(bets(ts(rnorm(20)), model = "ANN", control = list(integration = "mcmc")),
+               "should be one of")
   expect_error(bets(ts(rnorm(20)), model = "ANN", verbose = "yes"), "verbose must be")
 })
 

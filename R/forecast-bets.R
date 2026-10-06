@@ -8,21 +8,24 @@
 #'   since BETS forecasts forward from the end of the training series.
 #' @param h Forecast horizon.
 #' @param level Confidence levels for intervals.
-#' @param n_traj Number of simulated trajectories.
+#' @param n_traj Number of simulated trajectories (default 1000). The Monte
+#'   Carlo error of the interval bounds decreases as `1 / sqrt(n_traj)`: with
+#'   the default it is about 2% of the width of the 95% interval, and 4 times
+#'   more trajectories halve it (the cost grows linearly with `n_traj * h`).
 #' @param ... Unused.
 #'
 #' @return An object of class `bets_forecast`.
 #' @export
 predict.bets <- function(object, newdata = NULL, h = 10, level = c(80, 95),
-                         n_traj = NULL, ...) {
+                         n_traj = 1000, ...) {
   if (!is.null(newdata))
     stop("`newdata` is not supported for BETS models: forecasts are always ",
          "generated forward from the end of the training series.")
 
-  if (is.null(n_traj))
-    n_traj <- object$control$n_traj_forecast
   if (!is.numeric(h) || length(h) != 1 || h <= 0)
     stop("h must be a single positive number")
+  if (!is.numeric(n_traj) || length(n_traj) != 1 || n_traj < 1)
+    stop("n_traj must be a single positive number")
 
   level <- sort(unique(as.numeric(level)))
   if (any(level <= 0 | level >= 100))

@@ -8,7 +8,6 @@ bets(
   y,
   model = "ZZZ",
   combination = c("bma", "stacking"),
-  integration = c("auto", "quadrature", "ais"),
   additive.only = TRUE,
   verbose = 0,
   control = list()
@@ -22,11 +21,6 @@ or pass a specific model specification (e.g., "AAdN").}
 
 \item{combination}{How the model fits are combined: \code{"bma"} (Bayesian Model
 Averaging, default) or \code{"stacking"}.}
-
-\item{integration}{How the smoothing parameters are integrated out of each
-model: \code{"auto"} (default), \code{"quadrature"} or \code{"ais"}. \code{"auto"} uses
-quadrature for models with up to 2 smoothing parameters (ANN, AAN, ANA) and
-AIS for models with 3 or 4 (AAdN, AAA, AAdA). See \strong{Details}.}
 
 \item{additive.only}{Logical; if \code{TRUE} (default), only additive-error models are considered.
 Currently, setting \code{additive.only = FALSE} will result in an error.}
@@ -52,13 +46,17 @@ Currently only additive-error models are supported (i.e. \code{additive.only = T
 \details{
 \subsection{Integration methods}{
 
-Both methods start from the posterior mode of the unconstrained smoothing
-parameters and the inverse Hessian there. Quadrature integrates on a
-Gauss-Hermite grid scaled by the inverse Hessian. AIS draws from a Student-t
-proposal centred at the mode, sampled with randomised Sobol points, and
-adapts it only while the effective sample size is below \code{min_ess} (usually a
-single step suffices). Initial states and error variance are integrated out
-analytically in both cases.
+The smoothing parameters of each model are integrated out either by adaptive
+Gauss-Hermite quadrature or by adaptive importance sampling (AIS). Both start
+from the posterior mode of the unconstrained smoothing parameters and the
+inverse Hessian there. Quadrature integrates on a Gauss-Hermite grid scaled
+by the inverse Hessian. AIS draws from a Student-t proposal centred at the
+mode, sampled with randomised Sobol points, and adapts it only while the
+effective sample size is below \code{min_ess} (usually a single step suffices).
+Initial states and error variance are integrated out analytically in both
+cases. By default (\code{integration = "auto"} in \code{control}), quadrature is used
+for models with up to 2 smoothing parameters (ANN, AAN, ANA) and AIS for
+models with 3 or 4 (AAdN, AAA, AAdA), where quadrature is less accurate.
 }
 
 \subsection{Control parameters}{
@@ -67,18 +65,24 @@ The \code{control} argument accepts a named list with the following entries: (TO
 \itemize{
 \item \code{prior_models}: optional prior model probabilities for BMA, passed as a
 list (...). Default: equal weights.
+\item \code{integration}: \code{"auto"} (default, see above), \code{"quadrature"} or \code{"ais"},
+to force one method for all models. Forcing quadrature is not recommended
+for models with 3 or more smoothing parameters: its error grows with the
+dimension and can be large for strongly non-Gaussian posteriors.
 \item \code{N_draw}: Number of AIS draws per iteration, indexed by the number \code{d} of
 smoothing parameters (1 to 4). Default \code{c(128, 256, 512, 1024)}; a scalar
 applies to all \code{d}. Powers of 2 are optimal for Sobol sequences.
 \item \code{min_ess}: AIS stops as soon as the effective sample size of all draws so
 far reaches \code{min_ess}. Default \code{NULL} resolves to \code{N_draw / 4}. Models that
 do not reach it within \code{N_iter_max} iterations (default 30) get zero weight.
+\item \code{N_final}: Number of posterior draws kept per model (used by \code{\link[=predict.bets]{predict.bets()}}),
+indexed by \code{d} like \code{N_draw}. Default \code{c(100, 300, 500, 500)}.
 \item \code{is_df}, \code{is_scale}: Degrees of freedom of the Student-t proposal of AIS
 (default 5) and inflation of its initial scale matrix relative to the
-inverse Hessian (default 1.5).
+inverse Hessian (default 4).
 \item \code{n_quad}: Number of Gauss-Hermite nodes per dimension for quadrature,
 indexed by \code{d} like \code{N_draw}; the grid has \code{n_quad[d]^d} nodes. Default
-\code{c(15, 9, 7, 5)}.
+\code{c(21, 21, 9, 7)}.
 }
 }
 }

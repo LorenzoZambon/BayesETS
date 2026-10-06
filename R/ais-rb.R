@@ -284,7 +284,7 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
 # the IS estimate of the integral, the normalised weights of the pooled draws,
 # the draws, the output of log_g_fn per iteration and the ESS.
 adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
-                                         df = 5, scale = 1.5,
+                                         df = 5, scale = 4,
                                          n_iter_max = 30, lr = 0.9,
                                          verbose = 0, ...) {
   lap <- laplace_mode(log_g_fn, z_start, ...)
