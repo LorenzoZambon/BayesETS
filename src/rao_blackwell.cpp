@@ -254,8 +254,17 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
       Rn_cube.slice(i) = arma::inv(arma::trimatl(L_M));
     }
 
+    // quad >= 0 in exact arithmetic, but it is the difference of two terms
+    // that become huge when the recursion explodes (theta outside the stable
+    // region, long series).  If nearly all digits cancel, the value is noise:
+    // mark the particle as invalid instead of clamping, so that rounding can
+    // never produce a spuriously high likelihood.
     double quad = rtr - quad_woodbury;
-    if (quad < 0.0) quad = 0.0;
+    if (!std::isfinite(quad) || quad <= 1e-8 * rtr) {
+      log_ml(i) = -datum::inf;
+      if (return_posterior) posterior_scale(i) = datum::inf;
+      continue;
+    }
 
     // Marginal Student-t log-likelihood
     // log p(y|theta) = lgamma((nu0+L)/2) - lgamma(nu0/2)

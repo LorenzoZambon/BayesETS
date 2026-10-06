@@ -38,6 +38,13 @@ fit_bets_models <- function(y,
     ctrl$psi0 <- psi0
   }
 
+  # Centre the series at its initial level (the prior mean of l0, see
+  # init_eta_params()).  The additive model is location-equivariant: only the
+  # level states shift, so the evidence and theta posterior are unchanged,
+  # while the sufficient statistics of the C++ kernels stay small.
+  y_shift <- mean(y[seq_len(min(freq, length(y)))])
+  y_centred <- y - y_shift
+
   results_list <- vector("list", n_models)
   log_marginal_liks <- rep(NA_real_, n_models)
   log_lik_list <- if (need_pointwise) vector("list", n_models) else NULL
@@ -52,11 +59,16 @@ fit_bets_models <- function(y,
                               ais        = adaptive_is_rb,
                               quadrature = quadrature_rb)
     res_i <- integrate_model(
-      y,
+      y_centred,
       model_components[[i]],
       ctrl = ctrl,
       return_pointwise = need_pointwise
     )
+    # Back to the original location (NULL if the model failed)
+    if (!is.null(res_i$etas)) {
+      res_i$etas[, "l"]   <- res_i$etas[, "l"] + y_shift
+      res_i$states[, "l"] <- res_i$states[, "l"] + y_shift
+    }
 
     fit_time_per_model[i] <- proc.time()[3] - t0
     results_list[[i]] <- res_i
