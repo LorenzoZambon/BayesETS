@@ -35,6 +35,17 @@
 #' for models with up to 2 smoothing parameters (ANN, AAN, ANA) and AIS for
 #' models with 3 or 4 (AAdN, AAA, AAdA), where quadrature is less accurate.
 #'
+#' ## Seasonal period
+#'
+#' The seasonal period is `frequency(y)`, with the same rules as
+#' `forecast::ets()`: a frequency below 1 (e.g. decennial data) counts as 1,
+#' and a non-integer frequency (e.g. 52.18 for weekly data) allows
+#' non-seasonal models only; both cases give a warning. Seasonal models also require a
+#' period of at most 24 and more than one full period of data. With
+#' `model = "ZZZ"`, seasonal models are left out when these conditions do not
+#' hold (with a warning for a period above 24); requesting a seasonal model
+#' explicitly is then an error. Forecasts keep the time index of `y`.
+#'
 #' ## Control parameters
 #'
 #' The `control` argument accepts a named list with the following entries: (TODO)
@@ -89,14 +100,20 @@ bets <- function(y,
     stop("verbose must be 0, 1, 2, TRUE or FALSE")
   }
 
-  freq <- stats::frequency(y)
+  m <- seasonal_period(y)
 
-  ctrl <- resolve_bets_control(control, freq)
+  ctrl <- resolve_bets_control(control, m)
   integration <- match.arg(ctrl$integration, c("auto", "quadrature", "ais"))
-  model_components <- coerce_model_components(model, freq, additive.only)
+  model_components <- coerce_model_components(model, m, additive.only, n = length(y))
+
+  # The models are fitted on a copy of y whose frequency is the seasonal period
+  # (1 if seasonal models cannot be fitted), so that the prior heuristics only
+  # see integer periods; y keeps its time index for predict().
+  if (m > 24 || length(y) <= m) m <- 1L
+  y_fit <- stats::ts(as.numeric(y), frequency = m)
 
   fit <- fit_bets_models(
-    y = y,
+    y = y_fit,
     model_components = model_components,
     ctrl = ctrl,
     combination = combination,
@@ -120,7 +137,7 @@ bets <- function(y,
 print.bets <- function(x, ...) {
   cat("BETS model fit\n")
   cat(sprintf("  length of the series: %d\n", length(x$y)))
-  cat(sprintf("  frequency: %d\n", stats::frequency(x$y)))
+  cat(sprintf("  frequency: %s\n", format(stats::frequency(x$y))))
 
   print_comb <- ifelse(x$fit$combination == "bma", "Bayesian Model Averaging", "Stacking")
   cat(sprintf("  combination: %s\n", print_comb))

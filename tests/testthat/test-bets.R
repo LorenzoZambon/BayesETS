@@ -85,9 +85,47 @@ test_that("bets() rejects invalid combination, integration and verbose", {
 
 test_that("bets() works for series with frequency < 1 (decennial uspop)", {
   set.seed(1)
-  fit <- bets(uspop)
+  expect_warning(fit <- bets(uspop), "Frequency below 1")
   expect_equal(sum(fit$fit$model_weights), 1, tolerance = 1e-8)
   expect_true(all(is.finite(predict(fit, h = 3)$mean)))
+  expect_output(print(fit), "frequency: 0.1")
+})
+
+test_that("non-integer frequency: warning, non-seasonal models, time index kept", {
+  set.seed(1)
+  y <- ts(10 + cumsum(rnorm(80)), start = c(2020, 1), frequency = 365.25 / 7)
+  expect_warning(fit <- bets(y), "Non-integer seasonal period")
+  expect_true(all(vapply(fit$model_components, `[[`, character(1), 3) == "N"))
+  fc <- predict(fit, h = 3)
+  expect_equal(stats::tsp(fc$mean)[1], stats::tsp(y)[2] + 7 / 365.25, tolerance = 1e-10)
+  expect_output(print(fit), "frequency: 52.17857")
+  expect_error(suppressWarnings(bets(y, model = "ANA")), "integer > 1")
+})
+
+test_that("frequency > 24: 'ZZZ' drops seasonal models, explicit ones are an error", {
+  set.seed(1)
+  y <- ts(10 + cumsum(rnorm(100)), frequency = 48)
+  expect_warning(fit <- bets(y), "> 24")
+  expect_true(all(vapply(fit$model_components, `[[`, character(1), 3) == "N"))
+  expect_error(bets(y, model = "ANA"), "not supported for frequency\\(y\\) > 24")
+})
+
+test_that("seasonal series shorter than one period: non-seasonal models only", {
+  set.seed(1)
+  y <- ts(10 + cumsum(rnorm(10)), frequency = 12)
+  fit <- bets(y)
+  expect_length(fit$model_components, 3)
+  expect_true(all(is.finite(predict(fit, h = 3)$mean)))
+  expect_error(bets(y, model = "ANA"), "more than frequency\\(y\\) observations")
+})
+
+test_that("seasonal series with less than two periods: trend models get valid fits", {
+  # The prior mean of b0 used to read observations m+1..2m, NA when L < 2m.
+  set.seed(1)
+  y <- ts(10 + cumsum(rnorm(20)), frequency = 12)
+  fit <- suppressWarnings(bets(y))
+  le <- vapply(fit$fit$results, `[[`, numeric(1), "log_evidence")
+  expect_true(all(is.finite(le)))
 })
 
 test_that("bets() fit contains one result per model", {

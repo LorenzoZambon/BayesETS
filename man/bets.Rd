@@ -59,6 +59,18 @@ for models with up to 2 smoothing parameters (ANN, AAN, ANA) and AIS for
 models with 3 or 4 (AAdN, AAA, AAdA), where quadrature is less accurate.
 }
 
+\subsection{Seasonal period}{
+
+The seasonal period is \code{frequency(y)}, with the same rules as
+\code{forecast::ets()}: a frequency below 1 (e.g. decennial data) counts as 1,
+and a non-integer frequency (e.g. 52.18 for weekly data) allows
+non-seasonal models only; both cases give a warning. Seasonal models also require a
+period of at most 24 and more than one full period of data. With
+\code{model = "ZZZ"}, seasonal models are left out when these conditions do not
+hold (with a warning for a period above 24); requesting a seasonal model
+explicitly is then an error. Forecasts keep the time index of \code{y}.
+}
+
 \subsection{Control parameters}{
 
 The \code{control} argument accepts a named list with the following entries: (TODO)

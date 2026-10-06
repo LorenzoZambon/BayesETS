@@ -65,8 +65,28 @@ resolve_bets_control <- function(control = list(), freq = 1) {
   return(utils::modifyList(defaults, control))
 }
 
-bets_model_space <- function(freq) {
-  if (freq > 1) {
+# Seasonal period of y, with the rules of forecast::ets(): a frequency below 1
+# (e.g. decennial data) counts as 1 (here with a warning), and a non-integer
+# frequency (e.g. 52.18 for weekly data) allows non-seasonal models only.
+# Rounding it instead would make the seasonal pattern drift by a fraction of a
+# period every cycle.
+seasonal_period <- function(y) {
+  if (stats::frequency(y) < 1) {
+    warning("Frequency below 1 is treated as 1. Only non-seasonal models will be considered.",
+            call. = FALSE)
+    return(1L)
+  }
+  m <- stats::frequency(y)
+  if (abs(m - round(m)) > 1e-4) {
+    warning("Non-integer seasonal period. Only non-seasonal models will be considered.",
+            call. = FALSE)
+    return(1L)
+  }
+  as.integer(round(m))
+}
+
+bets_model_space <- function(m) {
+  if (m > 1) {
     list(
       c("A", "N", "N", "FALSE"),
       c("A", "A", "N", "FALSE"),
@@ -84,7 +104,10 @@ bets_model_space <- function(freq) {
   }
 }
 
-coerce_model_components <- function(model, freq, additive.only = TRUE) {
+# m is the seasonal period (see seasonal_period()) and n the length of the
+# series.  As in forecast::ets(), seasonal models need 1 < m <= 24 and n > m:
+# requesting one otherwise is an error, while "ZZZ" just leaves them out.
+coerce_model_components <- function(model, m, additive.only = TRUE, n = Inf) {
   if (!is.logical(additive.only) || length(additive.only) != 1 || is.na(additive.only)) {
     stop("additive.only must be TRUE or FALSE")
   }
@@ -129,8 +152,10 @@ coerce_model_components <- function(model, freq, additive.only = TRUE) {
       stop("Invalid seasonal component: allowed values are 'N', 'A', 'M'")
     }
 
-    if (freq <= 1 && season_comp != "N") {
-      stop("Seasonal models require frequency(y) > 1")
+    if (season_comp != "N") {
+      if (m <= 1) stop("Seasonal models require frequency(y) to be an integer > 1")
+      if (m > 24) stop("Seasonal models are not supported for frequency(y) > 24")
+      if (n <= m) stop("Seasonal models require more than frequency(y) observations")
     }
 
     damped_norm <- if (is.null(damped)) damped_from_trend else normalize_damped(damped)
@@ -181,7 +206,11 @@ coerce_model_components <- function(model, freq, additive.only = TRUE) {
   }
 
   if (is.null(model) || identical(model, "ZZZ")) {
-    return(bets_model_space(freq))
+    if (m > 24) {
+      warning("Seasonal models are not supported for frequency(y) > 24. ",
+              "Only non-seasonal models will be considered.", call. = FALSE)
+    }
+    return(bets_model_space(if (m <= 24 && n > m) m else 1L))
   }
 
   if (is.character(model) && length(model) %in% c(1, 3, 4)) {

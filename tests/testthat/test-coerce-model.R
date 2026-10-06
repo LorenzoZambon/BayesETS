@@ -71,6 +71,26 @@ test_that("'ZZZ' with m=12 returns 6 models", {
   expect_length(mc, 6)
 })
 
+test_that("'ZZZ' leaves out seasonal models when n <= m or m > 24", {
+  expect_length(BETS:::coerce_model_components("ZZZ", m = 12, n = 12), 3)
+  expect_warning(mc <- BETS:::coerce_model_components("ZZZ", m = 48, n = 200), "> 24")
+  expect_length(mc, 3)
+})
+
+# ---------------------------------------------------------------------------
+# Seasonal period (rules of forecast::ets)
+# ---------------------------------------------------------------------------
+
+test_that("seasonal_period() follows forecast::ets()", {
+  expect_identical(BETS:::seasonal_period(ts(1:10, frequency = 12)), 12L)
+  expect_identical(BETS:::seasonal_period(ts(1:10, frequency = 1)), 1L)
+  expect_warning(m <- BETS:::seasonal_period(ts(1:10, frequency = 0.1)), "below 1")
+  expect_identical(m, 1L)
+  expect_warning(m <- BETS:::seasonal_period(ts(1:10, frequency = 365.25 / 7)),
+                 "Non-integer seasonal period")
+  expect_identical(m, 1L)
+})
+
 test_that("list of models parses each element independently", {
   mc <- BETS:::coerce_model_components(list("ANN", "AAN"), m = 1)
   expect_length(mc, 2)

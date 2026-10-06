@@ -83,8 +83,11 @@ init_eta_params <- function(y, model_components, eta_df = NULL,
   init_var <- var_l
 
   if (trend) {
-    if (m > 1) {
-      b <- (mean(y[(m + 1):(2 * m)]) - mean(y[1:m])) / m
+    if (m > 1 && L > m) {
+      # Slope between the means of the first two periods; with fewer than 2 m
+      # observations, the second window is shifted back to end at L.
+      k <- min(m, L - m)
+      b <- (mean(y[(k + 1):(k + m)]) - mean(y[1:m])) / k
     } else {
       b <- y[2] - y[1]
     }
