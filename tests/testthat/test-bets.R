@@ -62,12 +62,9 @@ test_that("bets() model_weights sum to 1 under BMA with multiple models", {
   expect_equal(sum(fit$fit$model_weights), 1, tolerance = 1e-8)
 })
 
-test_that("bets() model_weights sum to 1 under stacking", {
-  set.seed(1)
-  fit <- bets(ts(rnorm(30)), model = list("ANN", "AAN"), combination = "stacking")
-  expect_equal(fit$fit$combination, "stacking")
-  expect_false(is.null(fit$fit$results[[1]]$log_lik_pointwise))
-  expect_equal(sum(fit$fit$model_weights), 1, tolerance = 1e-8)
+test_that("bets() rejects stacking (not implemented yet)", {
+  expect_error(bets(ts(rnorm(30)), combination = "stacking"),
+               "only Bayesian model averaging is supported")
 })
 
 test_that("bets() default integration ('auto') uses quadrature for d <= 2 and AIS for d >= 3", {

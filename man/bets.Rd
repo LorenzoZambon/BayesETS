@@ -19,8 +19,8 @@ bets(
 \item{model}{Model space: \code{"ZZZ"} (default) for a predefined set of models,
 or a model specification (e.g. \code{"AAdN"}), or a list of them.}
 
-\item{combination}{How the models are combined: \code{"bma"} (default) or
-\code{"stacking"}.}
+\item{combination}{How the models are combined; only \code{"bma"} (default) is
+currently supported.}
 
 \item{additive.only}{Logical; only \code{TRUE} (default) is currently supported.}
 
@@ -36,7 +36,7 @@ An object of class \code{"bets"}.
 }
 \description{
 Fits several ETS models and combines them into a single predictive
-distribution, by Bayesian Model Averaging (BMA) or stacking.
+distribution, by Bayesian Model Averaging (BMA).
 The smoothing parameters are integrated by adaptive Gauss-Hermite quadrature
 or adaptive importance sampling (AIS); the initial states and the error
 variance are integrated analytically.

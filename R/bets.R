@@ -1,7 +1,7 @@
 #' Fit a Bayesian ETS model
 #'
 #' Fits several ETS models and combines them into a single predictive
-#' distribution, by Bayesian Model Averaging (BMA) or stacking.
+#' distribution, by Bayesian Model Averaging (BMA).
 #' The smoothing parameters are integrated by adaptive Gauss-Hermite quadrature
 #' or adaptive importance sampling (AIS); the initial states and the error
 #' variance are integrated analytically.
@@ -10,8 +10,8 @@
 #' @param y Univariate time series.
 #' @param model Model space: `"ZZZ"` (default) for a predefined set of models,
 #'   or a model specification (e.g. `"AAdN"`), or a list of them.
-#' @param combination How the models are combined: `"bma"` (default) or
-#'   `"stacking"`.
+#' @param combination How the models are combined; only `"bma"` (default) is
+#'   currently supported.
 #' @param additive.only Logical; only `TRUE` (default) is currently supported.
 #' @param verbose `0` (default) prints nothing, `1` prints the model weights,
 #'   `2` also prints the progress of each fit. `TRUE`/`FALSE` are accepted as
@@ -108,6 +108,9 @@ bets <- function(y,
   }
 
   combination <- match.arg(combination)
+  if (combination == "stacking") {
+    stop("Currently only Bayesian model averaging is supported (combination = \"bma\")")
+  }
 
   if (!(is.numeric(verbose) || is.logical(verbose)) || length(verbose) != 1 || is.na(verbose)) {
     stop("verbose must be 0, 1, 2, TRUE or FALSE")
