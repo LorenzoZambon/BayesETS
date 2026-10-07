@@ -74,7 +74,7 @@ test_that("quadrature_rb() returns the same fields as adaptive_is_rb()", {
   set.seed(3)
   y <- ts(cumsum(rnorm(30)) + 10, frequency = 4)
   for (mc in list(c("A", "N", "N", "FALSE"), c("A", "A", "A", "TRUE"))) {
-    ctrl <- BETS:::resolve_bets_control(list(), 4)
+    ctrl <- BETS:::resolve_bets_control(list())
     ctrl$psi0 <- mean(diff(y)^2)
     res_ais  <- BETS:::adaptive_is_rb(y, mc, ctrl)
     res_quad <- BETS:::quadrature_rb(y, mc, ctrl)

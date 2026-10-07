@@ -24,20 +24,17 @@ fit_bets_models <- function(y,
   integration <- match.arg(integration)
 
   ctrl$verbose <- verbose   # read by the integrators
-  psi0    <- ctrl$psi0
+
+  if (is.null(ctrl$psi0)) {
+    ctrl$psi0 <- default_psi0(y)
+  }
 
   freq <- stats::frequency(y)
 
   n_models <- length(model_components)
   need_pointwise <- (combination == "stacking")
 
-  if (is.null(psi0)) {
-    psi0 <- default_psi0(y)
-    ctrl$psi0 <- psi0
-  }
-
-  # Centre the series at its initial level: only the level states change,
-  # and the C++ kernels work with smaller numbers
+  # Centre the series at its initial level (only the level states change)
   y_shift <- mean(y[seq_len(max(1L, min(as.integer(freq), length(y))))])
   y_centred <- y - y_shift
 
@@ -109,9 +106,9 @@ fit_bets_models <- function(y,
   )
 }
 
-# Fit of a constant series with ETS(A,N,N). The integrators cannot be used (all
-# residuals are zero), but the posterior is simple: alpha keeps its prior, the
-# final level is the constant and \sigma^2 is driven by its prior only.
+# Fit of a constant series with ETS(A,N,N). 
+# The posterior is simple: since residuals are all zero, alpha keeps its prior, 
+# the final level is the constant and \sigma^2 is driven by its prior only.
 fit_constant_series <- function(y, ctrl, combination) {
   level <- as.numeric(y[1])
   psi0 <- ctrl$psi0
@@ -129,9 +126,8 @@ fit_constant_series <- function(y, ctrl, combination) {
        fit_time_per_model = 0, elapsed_combination = 0)
 }
 
-# Default psi0: variance of the naive or, if smaller, of the seasonal naive
-# residuals (variance rather than MSE, to ignore drift). Floored to stay
-# positive for deterministic series.
+# Default psi0: variance of the naive or (if smaller) of the seasonal naive residuals,
+# floored to stay positive for deterministic series.
 default_psi0 <- function(y) {
   m <- stats::frequency(y)
   psi0 <- stats::var(diff(y))
@@ -139,8 +135,8 @@ default_psi0 <- function(y) {
   max(psi0, 1e-8 * stats::var(y))
 }
 
-# Integration method of a model: with "auto", quadrature for up to 2 smoothing
-# parameters, AIS otherwise
+# Integration method of a model: 
+# with "auto", quadrature for up to 2 smoothing parameters, AIS otherwise
 resolve_integration <- function(integration, model_components) {
   if (integration != "auto") return(integration)
   trend  <- (model_components[[2]] == "A")

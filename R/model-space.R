@@ -13,7 +13,7 @@ resolve_by_d <- function(param, d) {
 
 # Default control parameters. N_draw, N_final and n_quad have one value per
 # number d = 1, ..., 4 of smoothing parameters (see resolve_by_d()).
-bets_control_defaults <- function(freq = 1) {
+bets_control_defaults <- function() {
   list(
     N_iter_max = 30,
     N_draw     = c(128L, 256L, 512L, 1024L),
@@ -35,12 +35,12 @@ bets_control_defaults <- function(freq = 1) {
 }
 
 # Checks control and fills in the defaults
-resolve_bets_control <- function(control = list(), freq = 1) {
+resolve_bets_control <- function(control = list()) {
   if (!is.list(control) || (length(control) > 0 &&
                             (is.null(names(control)) || any(names(control) == "")))) {
     stop("control must be a named list")
   }
-  defaults <- bets_control_defaults(freq)
+  defaults <- bets_control_defaults()
 
   unknown <- setdiff(names(control), names(defaults))
   if (length(unknown) > 0) {
@@ -48,11 +48,52 @@ resolve_bets_control <- function(control = list(), freq = 1) {
   }
 
   ctrl <- utils::modifyList(defaults, control)
-  # nu0 > 2, so that the prior mean of \sigma^2 exists
-  if (!is.numeric(ctrl$nu0) || length(ctrl$nu0) != 1 || !(ctrl$nu0 > 2)) {
-    stop("control$nu0 must be a single number greater than 2")
-  }
+  check_bets_control(ctrl)
   ctrl
+}
+
+# Checks the values of the control entries (the length of prior_models is
+# checked in bets(), where the number of models is known)
+check_bets_control <- function(ctrl) {
+  # numeric, length in len, no NA, and ok(x) for all values
+  valid <- function(x, ok, len = 1) {
+    is.numeric(x) && length(x) %in% len && !anyNA(x) && isTRUE(all(ok(x)))
+  }
+  integer_from <- function(lo) function(x) is.finite(x) & x >= lo & x == round(x)
+  positive <- function(x) is.finite(x) & x > 0
+  bad <- function(name, what) stop(sprintf("control$%s must be %s", name, what), call. = FALSE)
+  by_d <- ", or one value per number of smoothing parameters"
+
+  if (!valid(ctrl$N_iter_max, integer_from(1))) bad("N_iter_max", "a positive integer")
+  for (nm in c("N_draw", "N_final", "n_quad")) {
+    if (!valid(ctrl[[nm]], integer_from(1), 1:4)) bad(nm, paste0("a positive integer", by_d))
+  }
+  if (!is.null(ctrl$min_ess) && !valid(ctrl$min_ess, positive, 1:4)) {
+    bad("min_ess", paste0("NULL or a positive number", by_d))
+  }
+  if (!valid(ctrl$n_scan, integer_from(0))) bad("n_scan", "a non-negative integer")
+  for (nm in c("is_df", "is_scale", "c_inflate_eta")) {
+    if (!valid(ctrl[[nm]], positive)) bad(nm, "a positive number")
+  }
+  if (!valid(ctrl$lr, function(x) x > 0 & x <= 1)) bad("lr", "a number in (0, 1]")
+
+  # nu0 > 2, so that the prior mean of \sigma^2 exists
+  if (!valid(ctrl$nu0, function(x) is.finite(x) & x > 2)) bad("nu0", "a number greater than 2")
+  if (!is.null(ctrl$psi0) && !valid(ctrl$psi0, positive)) bad("psi0", "NULL or a positive number")
+  if (!valid(ctrl$phi_min, function(x) x > 0 & x < 1)) bad("phi_min", "a number in (0, 1)")
+  if (!valid(ctrl$phi_max, function(x) x > ctrl$phi_min & x <= 1)) {
+    bad("phi_max", "a number in (phi_min, 1]")
+  }
+  p <- ctrl$prior_models
+  if (!is.null(p) && !valid(p, function(x) x >= 0 & sum(x) > 0, seq_along(p))) {
+    bad("prior_models", "NULL or non-negative numbers with a positive sum")
+  }
+
+  if (!(is.character(ctrl$integration) && length(ctrl$integration) == 1 &&
+        ctrl$integration %in% c("auto", "quadrature", "ais"))) {
+    bad("integration", "one of \"auto\", \"quadrature\", \"ais\"")
+  }
+  invisible(TRUE)
 }
 
 # Error message for unknown control entries: suggests the closest valid name
@@ -69,8 +110,8 @@ unknown_control_message <- function(unknown, valid) {
   paste(c(lines, paste("Valid entries:", paste(valid, collapse = ", "))), collapse = "\n")
 }
 
-# Seasonal period of y, with the rules of forecast::ets(). A non-integer
-# frequency gives period 1: rounding it would make the seasonal pattern drift.
+# Seasonal period of y, with the rules of forecast::ets(). 
+# A non-integer frequency gives period 1
 seasonal_period <- function(y) {
   if (stats::frequency(y) < 1) {
     warning("Frequency below 1 is treated as 1. Only non-seasonal models will be considered.",
@@ -106,9 +147,9 @@ bets_model_space <- function(m) {
   }
 }
 
-# Converts the model specification into a list of (error, trend, season,
-# damped) vectors. m: seasonal period, n: length of the series. As in
-# forecast::ets(), seasonal models need 1 < m <= 24 and n > m.
+# Converts the model specification into a list of (error, trend, season, damped) vectors.
+# m: seasonal period, n: length of the series. 
+# As in forecast::ets(), seasonal models need 1 < m <= 24 and n > m.
 coerce_model_components <- function(model, m, additive.only = TRUE, n = Inf) {
   if (!is.logical(additive.only) || length(additive.only) != 1 || is.na(additive.only)) {
     stop("additive.only must be TRUE or FALSE")
@@ -210,6 +251,9 @@ coerce_model_components <- function(model, m, additive.only = TRUE, n = Inf) {
   if (is.null(model) || identical(model, "ZZZ")) {
     if (m > 24) {
       warning("Seasonal models are not supported for frequency(y) > 24. ",
+              "Only non-seasonal models will be considered.", call. = FALSE)
+    } else if (m >= n) {
+      warning("The number of observations is not sufficient for seasonal models. ",
               "Only non-seasonal models will be considered.", call. = FALSE)
     }
     return(bets_model_space(if (m <= 24 && n > m) m else 1L))

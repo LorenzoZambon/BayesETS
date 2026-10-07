@@ -6,7 +6,7 @@ test_that("co2 ETS(A,A,A): no spurious evidence from exploding recursions", {
   # The recursion explodes for many theta; the old clamp of the quadratic form
   # at 0 gave log evidence ~ +600 instead of ~ -141
   mc <- BETS:::coerce_model_components("AAA", 12)
-  ctrl <- BETS:::resolve_bets_control(list(N_final = 50L), 12)
+  ctrl <- BETS:::resolve_bets_control(list(N_final = 50L))
   le <- vapply(c("quadrature", "ais"), function(im) {
     set.seed(1)
     BETS:::fit_bets_models(co2, mc, ctrl, integration = im)$results[[1]]$log_evidence
@@ -20,7 +20,7 @@ test_that("lost-precision evaluations are invalid, not spikes (uncentred co2)", 
   mc <- c("A", "A", "A", "FALSE")
   tn <- c("alpha", "beta", "gamma")
   make_lg <- function(y) {
-    ctrl <- BETS:::resolve_bets_control(list(), 12)
+    ctrl <- BETS:::resolve_bets_control(list())
     ctrl$psi0 <- 0.5 * (mean(diff(y, lag = 12)^2) + mean(diff(y)^2))
     BETS:::make_log_g_rb(y, mc, tn, ctrl, BETS:::init_rb_prior(y, mc, tn, ctrl))
   }
@@ -47,7 +47,7 @@ test_that("the mode search is not trapped in the unstable region (nottem, AAN)",
   y <- nottem - mean(nottem[1:12])
   mc <- c("A", "A", "N", "FALSE")
   tn <- c("alpha", "beta")
-  ctrl <- BETS:::resolve_bets_control(list(), 12)
+  ctrl <- BETS:::resolve_bets_control(list())
   ctrl$psi0 <- 0.5 * (mean(diff(nottem, lag = 12)^2) + mean(diff(nottem)^2))
   lg <- BETS:::make_log_g_rb(y, mc, tn, ctrl, BETS:::init_rb_prior(y, mc, tn, ctrl))
   set.seed(1)
@@ -98,7 +98,7 @@ test_that("centring the series leaves the evidence unchanged and restores the le
   set.seed(2)
   y <- ts(1000 + cumsum(rnorm(40)), frequency = 1)
   mc <- BETS:::coerce_model_components("AAN", 1)
-  ctrl <- BETS:::resolve_bets_control(list(), 1)
+  ctrl <- BETS:::resolve_bets_control(list())
   ctrl$psi0 <- mean(diff(y)^2)
   le_raw <- BETS:::quadrature_rb(y, mc[[1]], ctrl)$log_evidence
   set.seed(1)

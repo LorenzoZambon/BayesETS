@@ -92,9 +92,11 @@ bets <- function(y,
                  additive.only = TRUE,
                  verbose = 0,
                  control = list()) {
+
   if (!stats::is.ts(y)) {
     y <- stats::ts(y)
   }
+  
   if (length(y) < 3) {
     stop("y must contain at least 3 observations")
   }
@@ -106,34 +108,39 @@ bets <- function(y,
   }
 
   combination <- match.arg(combination)
+
   if (!(is.numeric(verbose) || is.logical(verbose)) || length(verbose) != 1 || is.na(verbose)) {
     stop("verbose must be 0, 1, 2, TRUE or FALSE")
   }
 
   m <- seasonal_period(y)
 
-  ctrl <- resolve_bets_control(control, m)
-  integration <- match.arg(ctrl$integration, c("auto", "quadrature", "ais"))
+  ctrl <- resolve_bets_control(control)
   model_components <- coerce_model_components(model, m, additive.only, n = length(y))
+  if (!is.null(ctrl$prior_models) && length(ctrl$prior_models) != length(model_components)) {
+    stop(sprintf("control$prior_models must have one value per model (%d)",
+                 length(model_components)), call. = FALSE)
+  }
 
-  # Fit on a copy of y with frequency = seasonal period (1 if no seasonal model
-  # can be fitted); y keeps its time index for predict()
+  # Fit on a copy of y with frequency = seasonal period (1 if no seasonal model can be fitted);
+  # y keeps its time index for predict()
   if (m > 24 || length(y) <= m) m <- 1L
   y_fit <- stats::ts(as.numeric(y), frequency = m)
 
-  if (isTRUE(all(y_fit == y_fit[1]))) {
-    warning("y is constant: ETS(A,N,N) is used, the forecasts are constant and ",
-            "the width of the intervals is set by the prior of the error variance ",
-            "(see Details)", call. = FALSE)
+  if (isTRUE(all(y_fit == y_fit[1]))) {         # constant series
+    warning("y is constant! Only ETS(A,N,N) is used: the forecasts are flat and ",
+            "the prediction intervals might be unreliable.",
+            call. = FALSE)
     fit <- fit_constant_series(y_fit, ctrl, combination)
     model_components <- list(fit$results[[1]]$model_components)
-  } else {
+
+  } else {                                      # non-constant series
     fit <- fit_bets_models(
       y = y_fit,
       model_components = model_components,
       ctrl = ctrl,
       combination = combination,
-      integration = integration,
+      integration = ctrl$integration,
       verbose = as.numeric(verbose)
     )
   }

@@ -87,8 +87,16 @@ test_that("control integration forces one method for all models", {
 test_that("bets() rejects invalid combination, integration and verbose", {
   expect_error(bets(ts(rnorm(20)), model = "ANN", combination = "avg"), "should be one of")
   expect_error(bets(ts(rnorm(20)), model = "ANN", control = list(integration = "mcmc")),
-               "should be one of")
+               "integration must be one of")
   expect_error(bets(ts(rnorm(20)), model = "ANN", verbose = "yes"), "verbose must be")
+})
+
+test_that("bets() requires one prior probability per model", {
+  expect_error(bets(ts(rnorm(30)), control = list(prior_models = c(0.5, 0.5))),
+               "one value per model \\(3\\)")
+  set.seed(1)
+  fit <- bets(ts(rnorm(30)), model = list("ANN", "AAN"), control = list(prior_models = c(1, 0)))
+  expect_equal(fit$fit$model_weights, c(1, 0))
 })
 
 test_that("bets() works for series with frequency < 1 (decennial uspop)", {
