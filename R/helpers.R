@@ -91,17 +91,6 @@ simulate_future_trajectories <- function(bets_fit, h = 10, n_traj = 1000) {
   do.call(rbind, traj_list)
 }
 
-# Weighted mean and shrunk covariance of the draws: list(mu, Sigma)
-sobol_weighted_theta_params <- function(theta_unc_mat, w, min_var = 1e-6, lambda_shr = 0.1) {
-  w_mu <- colSums(w * theta_unc_mat)
-  centered <- sweep(theta_unc_mat, 2, w_mu, "-")
-  Sigma_w <- crossprod(centered * sqrt(w))
-  diag_Sigma <- pmax(diag(Sigma_w), min_var)
-  Sigma_w <- (1 - lambda_shr) * Sigma_w
-  diag(Sigma_w) <- diag_Sigma
-  list(mu = w_mu, Sigma = Sigma_w)
-}
-
 # Log-density of a multivariate t, given the upper Cholesky factor of the scale
 ldmvt_chol <- function(devs, chol_R, df) {
   d           <- ncol(devs)
