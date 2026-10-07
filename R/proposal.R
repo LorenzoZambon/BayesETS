@@ -59,8 +59,9 @@ init_eta_params <- function(y, model_components, eta_df = NULL,
 
   L <- length(y)
   m <- stats::frequency(y)
-  trend <- (model_components[[2]] == "A")
-  seas  <- (model_components[[3]] == "A")
+  flags <- model_flags(model_components)
+  trend <- flags$trend
+  seas  <- flags$seas
 
   n_lags <- ifelse(seas, m, 1)
   seas_diffs <- diff(y, lag = n_lags)
@@ -116,9 +117,10 @@ ets_future_traj <- function(model_components, states, params, sigma2s, h = 10, s
 
   if (!is.null(seed)) set.seed(seed)
 
-  trend <- (model_components[[2]] == "A")
-  seas <- (model_components[[3]] == "A")
-  damped <- (model_components[[4]] == "TRUE")
+  flags <- model_flags(model_components)
+  trend <- flags$trend
+  seas <- flags$seas
+  damped <- flags$damped
 
   N_samples <- nrow(params)
 

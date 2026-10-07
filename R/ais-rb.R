@@ -5,94 +5,42 @@
 # integrated analytically (conjugate prior). The proposal is a Student-t at the
 # posterior mode, adapted while the ESS is below min_ess.
 
-# Fit of one model by AIS
-adaptive_is_rb <- function(y, model_components, ctrl,
-                           return_pointwise = FALSE) {
-  N_iter_max  <- ctrl$N_iter_max
-  N_draw_raw  <- ctrl$N_draw
-  N_final_raw <- ctrl$N_final
-  min_ess_raw <- ctrl$min_ess   # NULL: N_draw / 4
-  is_df       <- ctrl$is_df
-  is_scale    <- ctrl$is_scale
-  lr          <- ctrl$lr
-  nu0         <- ctrl$nu0
-  verbose     <- ctrl$verbose
+# AIS over the smoothing parameters, from z_start: log evidence and weighted
+# draws of all iterations (theta, w, ml_res); failure: message, or NULL
+integrate_ais <- function(log_g_fn, z_start, theta_names, ctrl,
+                          log_g_mode = log_g_fn) {
+  d <- length(theta_names)
+  N_draw  <- resolve_by_d(ctrl$N_draw, d)
+  min_ess <- if (is.null(ctrl$min_ess)) N_draw / 4 else resolve_by_d(ctrl$min_ess, d)
 
-  L <- length(y)
-  trend <- (model_components[[2]] == "A")
-  seas <- (model_components[[3]] == "A")
-  damped <- (model_components[[4]] == "TRUE")
-  theta_names <- c("alpha", if (trend) c("beta", if (damped) "phi"), if (seas) "gamma")
-  n_theta <- length(theta_names)
-
-  # Values for d = n_theta
-  N_draw  <- resolve_by_d(N_draw_raw,  n_theta)
-  N_final <- resolve_by_d(N_final_raw, n_theta)
-  min_ess <- if (is.null(min_ess_raw)) N_draw / 4 else resolve_by_d(min_ess_raw, n_theta)
-
-  prior <- init_rb_prior(y, model_components, theta_names, ctrl)
-  log_g_rb <- make_log_g_rb(y, model_components, theta_names, ctrl, prior)
-
-  # AIS, with the mode search starting at the best point of a prior scan
-  t0 <- proc.time()[3]
-  scan <- prior_scan(log_g_rb, theta_names, ctrl$n_scan)
-  t_scan <- proc.time()[3] - t0
-  ais <- adaptive_importance_sampling(log_g_rb, scan$Z[1, ],
+  ais <- adaptive_importance_sampling(log_g_fn, z_start,
                                       n_draw = N_draw, min_ess = min_ess,
-                                      df = is_df, scale = is_scale,
-                                      n_iter_max = N_iter_max, lr = lr,
-                                      verbose = verbose)
-  timing <- c(list(scan = t_scan), ais$timing, list(post = 0))
-
-  prop_params <- ais$proposal
-  names(prop_params$mus) <- theta_names
-  rownames(prop_params$Sigma) <- colnames(prop_params$Sigma) <- theta_names
-
-  # Target ESS not reached: the model gets zero weight
-  if (ais$ess < min_ess) {
-    warning(sprintf(paste0(
-      "adaptive_is_rb: ESS = %.0f below min_ess = %.0f after %d iterations; ",
-      "the model gets zero weight"), ais$ess, min_ess, ais$n_iter))
-    return(list(
-      thetas = NULL,
-      etas = NULL,
-      states = NULL,
-      sigma2s = NULL,
-      ess = ais$ess,
-      n_iter = ais$n_iter,
-      prop_params = prop_params,
-      log_evidence = -Inf,
-      log_lik_pointwise = if (return_pointwise) matrix(-1e300, nrow = N_final, ncol = L) else NULL,  # not -Inf: NaN in logsumexp
-      timing = timing
-    ))
-  }
-
-  # Posterior draws, from the draws of all iterations
-  t0 <- proc.time()[3]
-  theta_particles <- do.call(rbind, lapply(ais$draw_evals, `[[`, "theta"))
-  ml_res <- bind_ml_res(lapply(ais$draw_evals, `[[`, "ml_res"))
-  post <- draw_rb_posterior(y, model_components, theta_particles, ais$w, ml_res,
-                            N_final = N_final, nu0 = nu0,
-                            return_pointwise = return_pointwise)
-  timing$post <- proc.time()[3] - t0
+                                      df = ctrl$is_df, scale = ctrl$is_scale,
+                                      n_iter_max = ctrl$N_iter_max, lr = ctrl$lr,
+                                      verbose = ctrl$verbose, log_g_mode = log_g_mode)
+  proposal <- ais$proposal
+  names(proposal$mus) <- theta_names
+  rownames(proposal$Sigma) <- colnames(proposal$Sigma) <- theta_names
 
   list(
-    thetas = post$thetas,
-    etas = post$etas,
-    states = post$states,
-    sigma2s = post$sigma2s,
+    log_evidence = ais$log_evidence,
+    theta = do.call(rbind, lapply(ais$draw_evals, `[[`, "theta")),
+    w = ais$w,
+    ml_res = bind_ml_res(lapply(ais$draw_evals, `[[`, "ml_res")),
     ess = ais$ess,
     n_iter = ais$n_iter,
-    prop_params = prop_params,
-    log_evidence = ais$log_evidence,
-    log_lik_pointwise = post$log_lik_pointwise,
-    timing = timing
+    proposal = proposal,
+    timing = ais$timing,
+    failure = if (ais$ess < min_ess) {
+      sprintf("AIS: ESS = %.0f below min_ess = %.0f after %d iterations; the model gets zero weight",
+              ais$ess, min_ess, ais$n_iter)
+    }
   )
 }
 
 
 ################################################################################
-# PRIOR AND POSTERIOR DRAWS (shared with quadrature_rb())
+# PRIOR AND POSTERIOR DRAWS (shared by quadrature and AIS)
 
 # Prior of the initial states and \sigma^2, and log-density of the uniform
 # prior of the smoothing parameters. eta0 and V0 are in the C++ order.
@@ -103,15 +51,15 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
   c_inflate_eta <- ctrl$c_inflate_eta
 
   m <- stats::frequency(y)
-  trend <- (model_components[[2]] == "A")
-  seas <- (model_components[[3]] == "A")
+  flags <- model_flags(model_components)
+  trend <- flags$trend
+  seas <- flags$seas
   n_theta <- length(theta_names)
 
-  eta_init <- init_eta_params(y, model_components)
-  eta_names_free <- names(eta_init$mus)  # l, [b,] [s1, ..., s_{m-1}]
+  eta_init <- init_eta_params(y, model_components)  # l, [b,] [s1, ..., s_{m-1}]
 
   # eta also includes the last seasonal state: (l0, [b0,] [s1, ..., s_m])
-  n_eta <- 1 + (if (trend) 1L else 0L) + (if (seas) m else 0L)
+  n_eta <- n_states(model_components, m)
 
   # Prior mean of s_m: -(s1 + ... + s_{m-1})
   eta0_free <- eta_init$mus
@@ -174,16 +122,14 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
 }
 
 # Posterior draws: resampling of the weighted particles, then \sigma^2 and eta
-# from their conditional posteriors. ml_res: output of marginal_likelihood_rb()
-# at the particles.
+# from their conditional posteriors, and the final states. ml_res: as returned
+# by make_log_g_rb() at the particles.
 draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
                               N_final, nu0, return_pointwise = FALSE) {
   L <- length(y)
   m <- stats::frequency(y)
-  trend <- (model_components[[2]] == "A")
-  seas <- (model_components[[3]] == "A")
-  damped <- (model_components[[4]] == "TRUE")
-  n_eta <- 1 + (if (trend) 1L else 0L) + (if (seas) m else 0L)
+  flags <- model_flags(model_components)
+  n_eta <- n_states(model_components, m)
   N_particles <- nrow(theta_particles)
 
   res_idx <- sample(N_particles, size = N_final, replace = TRUE, prob = w)
@@ -199,36 +145,27 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
   Z <- matrix(stats::rnorm(n_eta * N_final), nrow = n_eta, ncol = N_final)
   Rn_draws <- ml_res$Rn[, , res_idx, drop = FALSE]
   Z_draws  <- array(Z[, rep(seq_len(N_final), each = n_eta)], dim = c(n_eta, n_eta, N_final))
-  etas <- t(ml_res$mu_n[, res_idx, drop = FALSE] +
-              sweep(colSums(Rn_draws * Z_draws), 2, sqrt(sigma2s), "*"))
+  eta_cpp <- ml_res$mu_n[, res_idx, drop = FALSE] +
+    sweep(colSums(Rn_draws * Z_draws), 2, sqrt(sigma2s), "*")   # n_eta x N_final
 
-  # C++ order: l, [b,] s_m, ..., s1
-  eta_col_names_cpp <- c("l", if (trend) "b",
-                         if (seas) paste0("s", rev(seq_len(m))))
-  colnames(etas) <- eta_col_names_cpp
+  # Final states: affine functions of eta (C++)
+  states <- t(final_states_rb(ml_res$final_coef, ml_res$final_const, eta_cpp,
+                              as.integer(res_idx)))
 
-  # R order: l, [b,] s1, ..., s_m
-  eta_col_names_r <- c("l", if (trend) "b",
-                       if (seas) paste0("s", seq_len(m)))
-  etas <- etas[, eta_col_names_r, drop = FALSE]
-
-  # Final states
-  refit_final <- RSS_vect_arma(
-    yR = as.numeric(y),
-    trend = trend,
-    seas = seas,
-    damped = damped,
-    m = m,
-    init_statesR = etas,
-    paramsR = thetas,
-    return_residuals = return_pointwise
-  )
-  states <- refit_final$states
-  colnames(states) <- eta_col_names_r
+  # Initial states from the C++ order (l, [b,] s_m, ..., s1) to the R order
+  # (l, [b,] s1, ..., s_m); in the final states s1 is the next one used
+  state_names <- c("l", if (flags$trend) "b", if (flags$seas) paste0("s", seq_len(m)))
+  etas <- t(eta_cpp)
+  colnames(etas) <- c("l", if (flags$trend) "b", if (flags$seas) paste0("s", rev(seq_len(m))))
+  etas <- etas[, state_names, drop = FALSE]
+  colnames(states) <- state_names
 
   log_lik_pointwise <- NULL
   if (return_pointwise) {
-    E <- refit_final$residuals
+    # In-sample residuals, for stacking
+    E <- RSS_vect_arma(yR = as.numeric(y), trend = flags$trend, seas = flags$seas,
+                       damped = flags$damped, m = m, init_statesR = etas,
+                       paramsR = thetas, return_residuals = TRUE)$residuals
     sd_mat <- matrix(sqrt(sigma2s), nrow = nrow(E), ncol = ncol(E), byrow = FALSE)
     log_lik_pointwise <- stats::dnorm(E, mean = 0, sd = sd_mat, log = TRUE)
   }
@@ -246,15 +183,16 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
 ################################################################################
 # AIS HELPERS
 
-# AIS of g = exp(log g) on R^d (log_g_fn, z_start as in adaptive_gh_quadrature()).
-# Student-t proposal at the mode of log g, with scale matrix scale * H^{-1};
-# updated while ESS < min_ess, adding n_draw draws per iteration. The draws of
-# all iterations are pooled and weighted with the mixture of the proposals.
+# AIS of g = exp(log g) on R^d (log_g_fn, z_start, log_g_mode as in
+# adaptive_gh_quadrature()). Student-t proposal at the mode of log g, with scale
+# matrix scale * H^{-1}; updated while ESS < min_ess, adding n_draw draws per
+# iteration. The draws of all iterations are pooled and weighted with the
+# mixture of the proposals.
 adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
                                          df = 5, scale = 4,
                                          n_iter_max = 30, lr = 0.9,
-                                         verbose = 0, ...) {
-  lap <- laplace_mode(log_g_fn, z_start, ...)
+                                         verbose = 0, log_g_mode = log_g_fn, ...) {
+  lap <- laplace_mode(log_g_mode, z_start, ...)
   proposal <- list(mus = lap$zhat, Sigma = scale * tcrossprod(lap$Lmat), df = df)
   timing <- c(lap$timing, list(draws = 0, update = 0))
 
@@ -346,7 +284,9 @@ bind_ml_res <- function(ml_list) {
     log_marginal_lik = unlist(lapply(ml_list, function(r) as.numeric(r$log_marginal_lik))),
     Rn               = array(unlist(lapply(ml_list, `[[`, "Rn")), dim = c(n_eta, n_eta, n_tot)),
     mu_n             = do.call(cbind, lapply(ml_list, `[[`, "mu_n")),
-    posterior_scale  = unlist(lapply(ml_list, function(r) as.numeric(r$posterior_scale)))
+    posterior_scale  = unlist(lapply(ml_list, function(r) as.numeric(r$posterior_scale))),
+    final_coef       = array(unlist(lapply(ml_list, `[[`, "final_coef")), dim = c(n_eta, n_eta, n_tot)),
+    final_const      = do.call(cbind, lapply(ml_list, `[[`, "final_const"))
   )
 }
 

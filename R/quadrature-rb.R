@@ -6,90 +6,45 @@
 # the unconstrained space). The initial states and \sigma^2 are integrated
 # analytically, as in AIS.
 
-# Fit of one model by quadrature
-quadrature_rb <- function(y, model_components, ctrl,
-                          return_pointwise = FALSE) {
-  N_final_raw <- ctrl$N_final
-  n_quad_raw  <- ctrl$n_quad
-  nu0         <- ctrl$nu0
-  verbose     <- ctrl$verbose
+# Quadrature over the smoothing parameters, from z_start: log evidence and
+# weighted nodes (theta, w, ml_res); failure: message, or NULL
+integrate_quadrature <- function(log_g_fn, z_start, theta_names, ctrl,
+                                 log_g_mode = log_g_fn) {
+  n_quad <- resolve_by_d(ctrl$n_quad, length(theta_names))
+  quad <- adaptive_gh_quadrature(log_g_fn, z_start, n_quad, log_g_mode = log_g_mode)
 
-  L <- length(y)
-  trend <- (model_components[[2]] == "A")
-  seas <- (model_components[[3]] == "A")
-  damped <- (model_components[[4]] == "TRUE")
-  theta_names <- c("alpha", if (trend) c("beta", if (damped) "phi"), if (seas) "gamma")
-  n_theta <- length(theta_names)
-
-  # Values for d = n_theta
-  N_final <- resolve_by_d(N_final_raw, n_theta)
-  n_quad  <- resolve_by_d(n_quad_raw,  n_theta)
-
-  prior <- init_rb_prior(y, model_components, theta_names, ctrl)
-  log_g_rb <- make_log_g_rb(y, model_components, theta_names, ctrl, prior)
-
-  # Quadrature, with the mode search starting at the best point of a prior scan
-  t0 <- proc.time()[3]
-  scan <- prior_scan(log_g_rb, theta_names, ctrl$n_scan)
-  t_scan <- proc.time()[3] - t0
-  quad <- adaptive_gh_quadrature(log_g_rb, scan$Z[1, ], n_quad)
-  timing <- c(list(scan = t_scan), quad$timing, list(post = 0))
-
-  if (isTRUE(verbose >= 2)) {
+  if (isTRUE(ctrl$verbose >= 2)) {
     cat(sprintf("\n\nRB Gauss-Hermite quadrature: %d nodes (%d per dimension)\n",
                 nrow(quad$G), n_quad))
     cat(sprintf("\n log evidence = %.4f\n", quad$log_evidence))
   }
 
-  # No finite node: the model gets zero weight
-  if (!is.finite(quad$log_evidence)) {
-    warning("quadrature_rb: log g is not finite at any quadrature node")
-    return(list(
-      thetas = NULL,
-      etas = NULL,
-      states = NULL,
-      sigma2s = NULL,
-      ess = NA_real_,
-      n_iter = NA_integer_,
-      prop_params = NULL,
-      log_evidence = -Inf,
-      log_lik_pointwise = if (return_pointwise) matrix(-1e300, nrow = N_final, ncol = L) else NULL,  # not -Inf: NaN in logsumexp
-      timing = timing
-    ))
-  }
-
-  # Posterior draws, from the weighted nodes
-  t0 <- proc.time()[3]
-  post <- draw_rb_posterior(y, model_components,
-                            theta_particles = quad$node_eval$theta,
-                            w = quad$w,
-                            ml_res = quad$node_eval$ml_res,
-                            N_final = N_final, nu0 = nu0,
-                            return_pointwise = return_pointwise)
-  timing$post <- proc.time()[3] - t0
-
   list(
-    thetas = post$thetas,
-    etas = post$etas,
-    states = post$states,
-    sigma2s = post$sigma2s,
+    log_evidence = quad$log_evidence,
+    theta = quad$node_eval$theta,
+    w = quad$w,
+    ml_res = quad$node_eval$ml_res,
     ess = NA_real_,
     n_iter = NA_integer_,
-    prop_params = NULL,
-    log_evidence = quad$log_evidence,
-    log_lik_pointwise = post$log_lik_pointwise,
-    timing = timing
+    proposal = NULL,
+    timing = quad$timing,
+    failure = if (!is.finite(quad$log_evidence)) {
+      "Quadrature: log g is not finite at any node; the model gets zero weight"
+    }
   )
 }
 
 
 ################################################################################
-# INTEGRAND AND MODE (shared with adaptive_is_rb())
+# INTEGRAND AND MODE (shared by quadrature and AIS)
 
 # Integrand log g(z) = log p(y | \theta(z)) + log p(\theta(z)) + log |d\theta / dz|,
 # whose integral is the evidence p(y). Evaluated at the rows of Z in one C++
-# call; also returns \theta and the output of marginal_likelihood_rb().
-make_log_g_rb <- function(y, model_components, theta_names, ctrl, prior) {
+# call; also returns \theta and ml_res (output of marginal_likelihood_rb(), plus
+# the final states as affine functions of eta). With posterior = FALSE, only
+# log g: enough for the prior scan and the mode search.
+make_log_g_rb <- function(y, model_components, theta_names, ctrl, prior,
+                          posterior = TRUE) {
   nu0     <- ctrl$nu0
   phi_min <- ctrl$phi_min
   phi_max <- ctrl$phi_max
@@ -100,9 +55,7 @@ make_log_g_rb <- function(y, model_components, theta_names, ctrl, prior) {
 
   L <- length(y)
   m <- stats::frequency(y)
-  trend <- (model_components[[2]] == "A")
-  seas <- (model_components[[3]] == "A")
-  damped <- (model_components[[4]] == "TRUE")
+  flags <- model_flags(model_components)
   y_vec <- as.numeric(y)
 
   function(Z) {
@@ -110,11 +63,12 @@ make_log_g_rb <- function(y, model_components, theta_names, ctrl, prior) {
     trans <- transform_unconstrained_to_theta(Z, theta_names, phi_min, phi_max)
     design <- build_design_and_c_batch(
       yR = y_vec,
-      trend = trend,
-      seas = seas,
-      damped = damped,
+      trend = flags$trend,
+      seas = flags$seas,
+      damped = flags$damped,
       m = m,
-      paramsR = trans$theta
+      paramsR = trans$theta,
+      return_final = posterior
     )
     ml_res <- marginal_likelihood_rb(
       XtX_cube = design$XtX,
@@ -125,8 +79,12 @@ make_log_g_rb <- function(y, model_components, theta_names, ctrl, prior) {
       nu0      = nu0,
       psi0     = psi0,
       L        = L,
-      return_posterior = TRUE
+      return_posterior = posterior
     )
+    if (posterior) {
+      ml_res$final_coef  <- design$final_coef
+      ml_res$final_const <- design$final_const
+    }
     log_g <- as.numeric(ml_res$log_marginal_lik) + log_prior_theta_const + trans$log_jac
     list(log_g = log_g, theta = trans$theta, ml_res = ml_res)
   }
@@ -222,18 +180,19 @@ laplace_mode <- function(log_g_fn, z_start,
 
 # Adaptive Gauss-Hermite quadrature of g = exp(log g) on R^d, with n_quad nodes
 # per dimension. log_g_fn(Z) returns a list with the values log_g at the rows
-# of Z (other elements are kept in node_eval); z_start starts the mode search.
-# Nodes z_i = zhat + Lmat x_i, and
+# of Z (other elements are kept in node_eval); z_start starts the mode search,
+# done with log_g_mode (same values, possibly cheaper). Nodes z_i = zhat + Lmat x_i, and
 #   \int g(z) dz = |Lmat| E[g(zhat + Lmat X) / \phi_d(X)],  X ~ N(0, I_d)
 adaptive_gh_quadrature <- function(log_g_fn, z_start, n_quad,
                                    fd_step = 1e-3,
                                    lambda_floor = 1e-2,
                                    z_bound = 25,
-                                   penalty = 1e10) {
+                                   penalty = 1e10,
+                                   log_g_mode = log_g_fn) {
   d <- length(z_start)
 
   # Mode and Hessian
-  lap <- laplace_mode(log_g_fn, z_start, fd_step = fd_step, lambda_floor = lambda_floor,
+  lap <- laplace_mode(log_g_mode, z_start, fd_step = fd_step, lambda_floor = lambda_floor,
                       z_bound = z_bound, penalty = penalty)
   zhat <- lap$zhat
   Lmat <- lap$Lmat

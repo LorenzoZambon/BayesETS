@@ -48,15 +48,8 @@ fit_bets_models <- function(y,
     t0 <- proc.time()[3]
 
     integration_i <- resolve_integration(integration, model_components[[i]])
-    integrate_model <- switch(integration_i,
-                              ais        = adaptive_is_rb,
-                              quadrature = quadrature_rb)
-    res_i <- integrate_model(
-      y_centred,
-      model_components[[i]],
-      ctrl = ctrl,
-      return_pointwise = need_pointwise
-    )
+    res_i <- fit_one_model(y_centred, model_components[[i]], ctrl, integration_i,
+                           return_pointwise = need_pointwise)
     # Undo the centring (NULL for failed models)
     if (!is.null(res_i$etas)) {
       res_i$etas[, "l"]   <- res_i$etas[, "l"] + y_shift
@@ -106,7 +99,57 @@ fit_bets_models <- function(y,
   )
 }
 
-# Fit of a constant series with ETS(A,N,N). 
+# Fit of one model: prior, integrand, integration over the smoothing parameters
+# (integrate_quadrature() or integrate_ais()), posterior draws
+fit_one_model <- function(y, model_components, ctrl, integration,
+                          return_pointwise = FALSE) {
+  theta_names <- theta_names_of(model_components)
+  N_final <- resolve_by_d(ctrl$N_final, length(theta_names))
+
+  prior <- init_rb_prior(y, model_components, theta_names, ctrl)
+  log_g_rb <- make_log_g_rb(y, model_components, theta_names, ctrl, prior)
+  # Only log g, for the prior scan and the mode search
+  log_g_value <- make_log_g_rb(y, model_components, theta_names, ctrl, prior,
+                               posterior = FALSE)
+
+  # The mode search starts at the best point of a prior scan
+  t0 <- proc.time()[3]
+  scan <- prior_scan(log_g_value, theta_names, ctrl$n_scan)
+  t_scan <- proc.time()[3] - t0
+  integrate <- switch(integration, quadrature = integrate_quadrature, ais = integrate_ais)
+  int <- integrate(log_g_rb, scan$Z[1, ], theta_names, ctrl, log_g_mode = log_g_value)
+  timing <- c(list(scan = t_scan), int$timing, list(post = 0))
+
+  failed <- !is.null(int$failure)
+  if (failed) {
+    # The model gets zero weight; -1e300 rather than -Inf, to avoid NaN in logsumexp
+    warning(int$failure, call. = FALSE)
+    post <- list(log_lik_pointwise = if (return_pointwise) {
+      matrix(-1e300, nrow = N_final, ncol = length(y))
+    })
+  } else {
+    t0 <- proc.time()[3]
+    post <- draw_rb_posterior(y, model_components, int$theta, int$w, int$ml_res,
+                              N_final = N_final, nu0 = ctrl$nu0,
+                              return_pointwise = return_pointwise)
+    timing$post <- proc.time()[3] - t0
+  }
+
+  list(
+    thetas = post$thetas,
+    etas = post$etas,
+    states = post$states,
+    sigma2s = post$sigma2s,
+    ess = int$ess,
+    n_iter = int$n_iter,
+    prop_params = int$proposal,
+    log_evidence = if (failed) -Inf else int$log_evidence,
+    log_lik_pointwise = post$log_lik_pointwise,
+    timing = timing
+  )
+}
+
+# Fit of a constant series with ETS(A,N,N).
 # The posterior is simple: since residuals are all zero, alpha keeps its prior, 
 # the final level is the constant and \sigma^2 is driven by its prior only.
 fit_constant_series <- function(y, ctrl, combination) {
@@ -139,9 +182,5 @@ default_psi0 <- function(y) {
 # with "auto", quadrature for up to 2 smoothing parameters, AIS otherwise
 resolve_integration <- function(integration, model_components) {
   if (integration != "auto") return(integration)
-  trend  <- (model_components[[2]] == "A")
-  seas   <- (model_components[[3]] == "A")
-  damped <- (model_components[[4]] == "TRUE")
-  n_theta <- 1 + (if (trend) 1 + damped else 0) + seas
-  if (n_theta <= 2) "quadrature" else "ais"
+  if (length(theta_names_of(model_components)) <= 2) "quadrature" else "ais"
 }

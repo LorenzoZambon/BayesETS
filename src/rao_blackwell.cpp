@@ -8,7 +8,8 @@ using namespace arma;
 // Sufficient statistics X'X, X'y~ and y~'y~ of the additive ETS model
 //   y_t = c_t(\theta) + X_t(\theta) \eta + e_t,  \eta = (l0, [b0], [m seasonal states]),
 // with y~ = y - c, for each row (\theta) of params. X and c are built in one
-// recursive pass, without storing X.
+// recursive pass, without storing X. With return_final, also the final states
+// as affine functions of \eta: final_coef' \eta + final_const.
 // ---------------------------------------------------------------------------
 
 // [[Rcpp::export]]
@@ -17,7 +18,8 @@ List build_design_and_c_batch(NumericVector yR,
                               bool seas,
                               bool damped,
                               int m,
-                              NumericMatrix paramsR) {
+                              NumericMatrix paramsR,
+                              bool return_final = false) {
 
   vec y(yR.begin(), yR.size(), false);
   mat params(paramsR.begin(), paramsR.nrow(), paramsR.ncol(), false);
@@ -48,6 +50,14 @@ List build_design_and_c_batch(NumericVector yR,
   cube XtX(n_eta, n_eta, N, fill::zeros);
   mat  Xty(n_eta, N, fill::zeros);
   vec  yty(N, fill::zeros);
+
+  // Final states: column j of final_coef.slice(i) holds the coefficients of state j
+  cube final_coef;
+  mat  final_const;
+  if (return_final) {
+    final_coef.zeros(n_eta, n_eta, N);
+    final_const.zeros(n_eta, N);
+  }
 
   int s_offset = 1 + (trend ? 1 : 0);
 
@@ -139,15 +149,55 @@ List build_design_and_c_batch(NumericVector yR,
     Xty.col(i) = Xtyi;
     yty(i) = ytyi;
 
+    // Final states (l, [b,] seasonal states in order of use)
+    if (return_final) {
+      final_coef.slice(i).col(0) = coeff_l;
+      final_const(0, i) = det_l;
+      if (trend) {
+        final_coef.slice(i).col(1) = coeff_b;
+        final_const(1, i) = det_b;
+      }
+      if (seas) {
+        for (int j = 0; j < m; j++) {
+          int k = (L + j) % m;
+          final_coef.slice(i).col(s_offset + j) = coeff_s.row(k).t();
+          final_const(s_offset + j, i) = det_s(k);
+        }
+      }
+    }
   }
 
-  return List::create(
+  List out = List::create(
     _["XtX"] = XtX,
     _["Xty"] = Xty,
     _["yty"] = yty,
     _["n_eta"] = n_eta,
     _["L"] = L
   );
+  if (return_final) {
+    out["final_coef"] = final_coef;
+    out["final_const"] = final_const;
+  }
+  return out;
+}
+
+
+// ---------------------------------------------------------------------------
+// Final states of the posterior draws: final_coef_k' \eta_j + final_const_k,
+// with k = idx(j) the particle (1-based) of draw j (column j of eta)
+// ---------------------------------------------------------------------------
+
+// [[Rcpp::export]]
+arma::mat final_states_rb(const arma::cube& final_coef,
+                          const arma::mat& final_const,
+                          const arma::mat& eta,
+                          const arma::uvec& idx) {
+  mat states(eta.n_rows, eta.n_cols);
+  for (uword j = 0; j < eta.n_cols; j++) {
+    uword k = idx(j) - 1;
+    states.col(j) = final_coef.slice(k).t() * eta.col(j) + final_const.col(k);
+  }
+  return states;
 }
 
 

@@ -48,16 +48,16 @@ test_that("AIS adapts and pools draws until min_ess is reached", {
 })
 
 # ---------------------------------------------------------------------------
-# adaptive_is_rb(): interface
+# fit_one_model() with AIS: interface
 # ---------------------------------------------------------------------------
 
-test_that("adaptive_is_rb() returns posterior draws, ESS and proposal", {
+test_that("fit_one_model() with AIS returns posterior draws, ESS and proposal", {
   set.seed(3)
   y <- ts(cumsum(rnorm(30)) + 10, frequency = 4)
   for (mc in list(c("A", "N", "N", "FALSE"), c("A", "A", "A", "TRUE"))) {
     ctrl <- BETS:::resolve_bets_control(list())
     ctrl$psi0 <- mean(diff(y)^2)
-    res <- BETS:::adaptive_is_rb(y, mc, ctrl)
+    res <- BETS:::fit_one_model(y, mc, ctrl, "ais")
     d <- if (mc[[2]] == "N") 1 else 4
     expect_named(res, c("thetas", "etas", "states", "sigma2s", "ess", "n_iter",
                         "prop_params", "log_evidence", "log_lik_pointwise", "timing"))
@@ -69,12 +69,12 @@ test_that("adaptive_is_rb() returns posterior draws, ESS and proposal", {
   }
 })
 
-test_that("adaptive_is_rb() gives zero weight when min_ess is not reached", {
+test_that("fit_one_model() with AIS gives zero weight when min_ess is not reached", {
   set.seed(1)
   y <- ts(rnorm(20))
   ctrl <- BETS:::resolve_bets_control(list(min_ess = 1e6, N_iter_max = 2))
   ctrl$psi0 <- mean(diff(y)^2)
-  expect_warning(res <- BETS:::adaptive_is_rb(y, c("A", "N", "N", "FALSE"), ctrl),
+  expect_warning(res <- BETS:::fit_one_model(y, c("A", "N", "N", "FALSE"), ctrl, "ais"),
                  "zero weight")
   expect_equal(res$log_evidence, -Inf)
   expect_null(res$thetas)

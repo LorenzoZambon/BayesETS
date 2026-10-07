@@ -147,6 +147,25 @@ bets_model_space <- function(m) {
   }
 }
 
+# Components of a model as logicals: list(trend, seas, damped)
+model_flags <- function(model_components) {
+  list(trend  = model_components[[2]] == "A",
+       seas   = model_components[[3]] == "A",
+       damped = model_components[[4]] == "TRUE")
+}
+
+# Names of the smoothing parameters of a model
+theta_names_of <- function(model_components) {
+  flags <- model_flags(model_components)
+  c("alpha", if (flags$trend) c("beta", if (flags$damped) "phi"), if (flags$seas) "gamma")
+}
+
+# Number of initial states of a model: l, [b,] [m seasonal states]
+n_states <- function(model_components, m) {
+  flags <- model_flags(model_components)
+  1L + flags$trend + (if (flags$seas) m else 0L)
+}
+
 # Converts the model specification into a list of (error, trend, season, damped) vectors.
 # m: seasonal period, n: length of the series. 
 # As in forecast::ets(), seasonal models need 1 < m <= 24 and n > m.

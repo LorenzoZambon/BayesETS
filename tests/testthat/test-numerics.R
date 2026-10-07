@@ -94,13 +94,29 @@ test_that("bets() fits deterministic series (straight line, trend + exact season
   }
 })
 
+test_that("final states from the affine maps of the C++ kernel match the recursion", {
+  set.seed(1)
+  y <- ts(10 + cumsum(rnorm(30)) + rep(c(2, -1, 0, -1), length.out = 30), frequency = 4)
+  ctrl <- BETS:::resolve_bets_control(list(N_final = 20L))
+  ctrl$psi0 <- BETS:::default_psi0(y)
+  for (code in c("ANN", "AAN", "AAdN", "ANA", "AAdA")) {
+    mc <- BETS:::coerce_model_components(code, 4)[[1]]
+    flags <- BETS:::model_flags(mc)
+    set.seed(2)
+    res <- BETS:::fit_one_model(y, mc, ctrl, "ais")
+    rss <- BETS:::RSS_vect_arma(as.numeric(y), flags$trend, flags$seas, flags$damped, 4,
+                                res$etas, res$thetas)
+    expect_equal(unname(res$states), unname(rss$states), tolerance = 1e-8, info = code)
+  }
+})
+
 test_that("centring the series leaves the evidence unchanged and restores the level", {
   set.seed(2)
   y <- ts(1000 + cumsum(rnorm(40)), frequency = 1)
   mc <- BETS:::coerce_model_components("AAN", 1)
   ctrl <- BETS:::resolve_bets_control(list())
   ctrl$psi0 <- mean(diff(y)^2)
-  le_raw <- BETS:::quadrature_rb(y, mc[[1]], ctrl)$log_evidence
+  le_raw <- BETS:::fit_one_model(y, mc[[1]], ctrl, "quadrature")$log_evidence
   set.seed(1)
   fit <- BETS:::fit_bets_models(y, mc, ctrl, integration = "quadrature")$results[[1]]
   # Equal up to the optimiser's tolerance on the mode (~1e-5).
