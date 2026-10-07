@@ -71,8 +71,7 @@ simulate_future_trajectories <- function(bets_fit, h = 10, n_traj = 1000) {
   model_weights <- bets_fit$model_weights
 
   traj_list <- vector("list", n_models)
-  n_traj_list <- round(n_traj * model_weights)
-  n_traj_list[which.max(n_traj_list)] <- n_traj - sum(n_traj_list) + max(n_traj_list)
+  n_traj_list <- draws_per_model(model_weights, n_traj)
 
   for (i in seq_along(bets_fit$results)) {
     if (n_traj_list[i] > 0) {
@@ -89,6 +88,14 @@ simulate_future_trajectories <- function(bets_fit, h = 10, n_traj = 1000) {
   }
 
   do.call(rbind, traj_list)
+}
+
+# Split n draws among the models, proportionally to their weights (the rounding
+# remainder goes to the model with most draws)
+draws_per_model <- function(model_weights, n) {
+  n_k <- round(n * model_weights)
+  n_k[which.max(n_k)] <- n - sum(n_k) + max(n_k)
+  n_k
 }
 
 # Log-density of a multivariate t, given the upper Cholesky factor of the scale

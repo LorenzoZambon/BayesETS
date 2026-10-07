@@ -4,7 +4,7 @@
 #'
 #' @keywords internal
 #' @importFrom Rcpp evalCpp
-#' @importFrom stats predict
+#' @importFrom stats predict fitted residuals
 #' @importFrom qrng sobol
 #' @importFrom statmod gauss.quad
 #' @useDynLib BETS, .registration = TRUE
@@ -159,6 +159,7 @@ fit_constant_series <- function(y, ctrl, combination) {
   n <- resolve_by_d(ctrl$N_final, 1)
   result <- list(
     thetas = matrix(stats::runif(n), ncol = 1, dimnames = list(NULL, "alpha")),
+    etas = matrix(level, nrow = n, ncol = 1, dimnames = list(NULL, "l")),
     states = matrix(level, nrow = n, ncol = 1, dimnames = list(NULL, "l")),
     sigma2s = psi0 / stats::rchisq(n, df = ctrl$nu0 + length(y)),
     log_evidence = NA_real_,
