@@ -49,4 +49,5 @@ test_that("constant series: zero residuals", {
 test_that("fitted() and residuals() check their arguments", {
   expect_error(residuals(fit_fr, type = "median"), "should be one of")
   expect_error(fitted(fit_fr, type = "draws", n_draws = 0), "n_draws must be")
+  expect_error(fitted(fit_fr, type = "draws", n_draws = 10.5), "n_draws must be")
 })

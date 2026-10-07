@@ -96,7 +96,13 @@ bets <- function(y,
   if (!stats::is.ts(y)) {
     y <- stats::ts(y)
   }
-  
+
+  if (!is.numeric(y) || NCOL(y) != 1) {
+    stop("y must be a numeric vector or a univariate time series")
+  }
+  if (any(!is.finite(y))) {
+    stop("y must not contain missing or infinite values")
+  }
   if (length(y) < 3) {
     stop("y must contain at least 3 observations")
   }

@@ -6,6 +6,13 @@ test_that("bets() rejects y with fewer than 3 observations", {
   expect_error(bets(c(1, 2)), "at least 3")
 })
 
+test_that("bets() rejects missing, infinite and non-numeric values", {
+  expect_error(bets(ts(c(1, 2, NA, 4, 5))), "missing or infinite values")
+  expect_error(bets(ts(c(1, 2, Inf, 4, 5))), "missing or infinite values")
+  expect_error(bets(ts(letters[1:5])), "numeric vector or a univariate time series")
+  expect_error(bets(ts(matrix(rnorm(20), ncol = 2))), "numeric vector or a univariate time series")
+})
+
 test_that("bets() rejects additive.only = FALSE", {
   expect_error(bets(ts(1:10), additive.only = FALSE), "additive\\.only = TRUE")
 })

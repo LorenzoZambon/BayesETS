@@ -90,6 +90,11 @@ simulate_future_trajectories <- function(bets_fit, h = 10, n_traj = 1000) {
   do.call(rbind, traj_list)
 }
 
+# TRUE for a single integer >= 1
+is_count <- function(x) {
+  is.numeric(x) && length(x) == 1 && is.finite(x) && x >= 1 && x == round(x)
+}
+
 # Split n draws among the models, proportionally to their weights (the rounding
 # remainder goes to the model with most draws)
 draws_per_model <- function(model_weights, n) {

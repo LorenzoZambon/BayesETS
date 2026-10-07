@@ -20,10 +20,10 @@ predict.bets <- function(object, newdata = NULL, h = 10, level = c(80, 95),
     stop("`newdata` is not supported for BETS models: forecasts are always ",
          "generated forward from the end of the training series.")
 
-  if (!is.numeric(h) || length(h) != 1 || h <= 0)
-    stop("h must be a single positive number")
-  if (!is.numeric(n_traj) || length(n_traj) != 1 || n_traj < 1)
-    stop("n_traj must be a single positive number")
+  if (!is_count(h))
+    stop("h must be a single positive integer")
+  if (!is_count(n_traj))
+    stop("n_traj must be a single positive integer")
 
   level <- sort(unique(as.numeric(level)))
   if (any(level <= 0 | level >= 100))

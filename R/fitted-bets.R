@@ -40,8 +40,8 @@ residuals.bets <- function(object, type = c("mean", "draws"), n_draws = 1000, ..
 # One-step residuals of the posterior draws: their weighted mean over draws and
 # models ("mean"), or n_draws rows of draws, resampled by model weight ("draws")
 one_step_residuals <- function(object, type, n_draws) {
-  if (type == "draws" && (!is.numeric(n_draws) || length(n_draws) != 1 || n_draws < 1)) {
-    stop("n_draws must be a single positive number")
+  if (type == "draws" && !is_count(n_draws)) {
+    stop("n_draws must be a single positive integer")
   }
   y <- as.numeric(object$y)
   results <- object$fit$results

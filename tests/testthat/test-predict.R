@@ -15,18 +15,22 @@ test_that("predict.bets() errors when newdata is supplied", {
   expect_error(predict(fit_ann, newdata = 1:5), "newdata")
 })
 
-test_that("predict.bets() errors for non-positive h", {
-  expect_error(predict(fit_ann, h = 0),  "h must be a single positive number")
-  expect_error(predict(fit_ann, h = -1), "h must be a single positive number")
+test_that("predict.bets() errors for non-positive or non-integer h", {
+  expect_error(predict(fit_ann, h = 0),   "h must be a single positive integer")
+  expect_error(predict(fit_ann, h = -1),  "h must be a single positive integer")
+  expect_error(predict(fit_ann, h = 0.5), "h must be a single positive integer")
+  expect_error(predict(fit_ann, h = 2.7), "h must be a single positive integer")
+  expect_error(predict(fit_ann, h = NA),  "h must be a single positive integer")
 })
 
 test_that("predict.bets() errors for non-scalar h", {
-  expect_error(predict(fit_ann, h = c(5, 10)), "h must be a single positive number")
+  expect_error(predict(fit_ann, h = c(5, 10)), "h must be a single positive integer")
 })
 
 test_that("predict.bets() errors for invalid n_traj", {
-  expect_error(predict(fit_ann, h = 5, n_traj = 0), "n_traj must be a single positive number")
-  expect_error(predict(fit_ann, h = 5, n_traj = c(100, 200)), "n_traj must be a single positive number")
+  expect_error(predict(fit_ann, h = 5, n_traj = 0), "n_traj must be a single positive integer")
+  expect_error(predict(fit_ann, h = 5, n_traj = 10.5), "n_traj must be a single positive integer")
+  expect_error(predict(fit_ann, h = 5, n_traj = c(100, 200)), "n_traj must be a single positive integer")
 })
 
 test_that("predict.bets() accepts a custom n_traj", {
