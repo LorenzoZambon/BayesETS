@@ -94,6 +94,16 @@ test_that("predict.bets() lower and upper have h rows", {
   expect_equal(nrow(fc$upper), 6)
 })
 
+test_that("predict.bets() works for h = 1 and for a single level", {
+  fc <- predict(fit_ann, h = 1)
+  expect_equal(dim(fc$lower), c(1L, 2L))
+  expect_equal(colnames(fc$upper), c("80", "95"))
+  fc <- predict(fit_ann, h = 4, level = 90)
+  expect_equal(dim(fc$lower), c(4L, 1L))
+  fc <- predict(fit_ann, h = 1, level = 90)
+  expect_equal(dim(fc$upper), c(1L, 1L))
+})
+
 test_that("predict.bets() lower and upper have ncol = length(level)", {
   fc <- predict(fit_ann, h = 5, level = c(80, 90, 95))
   expect_equal(ncol(fc$lower), 3)

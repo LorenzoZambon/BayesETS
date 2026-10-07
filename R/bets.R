@@ -46,6 +46,15 @@
 #' hold (with a warning for a period above 24); requesting a seasonal model
 #' explicitly is then an error. Forecasts keep the time index of `y`.
 #'
+#' ## Constant series
+#'
+#' A constant series is fitted with ETS(A,N,N) whatever `model` is, with a
+#' warning: the forecasts equal the constant, and since the data show no
+#' variability the width of the intervals comes from the prior of the error
+#' variance. Its default scale is `psi0 = (0.2 * |level|)^2` (`0.2^2` for a
+#' series of zeros); the intervals narrow as the series gets longer and widen
+#' with the horizon. Set `psi0` in `control` to choose the scale.
+#'
 #' ## Control parameters
 #'
 #' The `control` argument accepts a named list with the following entries: (TODO)
@@ -118,14 +127,22 @@ bets <- function(y,
   if (m > 24 || length(y) <= m) m <- 1L
   y_fit <- stats::ts(as.numeric(y), frequency = m)
 
-  fit <- fit_bets_models(
-    y = y_fit,
-    model_components = model_components,
-    ctrl = ctrl,
-    combination = combination,
-    integration = integration,
-    verbose = as.numeric(verbose)
-  )
+  if (isTRUE(all(y_fit == y_fit[1]))) {
+    warning("y is constant: ETS(A,N,N) is used, the forecasts are constant and ",
+            "the width of the intervals is set by the prior of the error variance ",
+            "(see Details)", call. = FALSE)
+    fit <- fit_constant_series(y_fit, ctrl, combination)
+    model_components <- list(fit$results[[1]]$model_components)
+  } else {
+    fit <- fit_bets_models(
+      y = y_fit,
+      model_components = model_components,
+      ctrl = ctrl,
+      combination = combination,
+      integration = integration,
+      verbose = as.numeric(verbose)
+    )
+  }
 
   structure(
     list(

@@ -40,10 +40,9 @@ predict.bets <- function(object, newdata = NULL, h = 10, level = c(80, 95),
   upper <- sapply(level, function(lv)
     apply(traj, 2, stats::quantile, probs = 1 - (100 - lv) / 200, na.rm = TRUE))
 
-  if (is.null(dim(lower))) {
-    lower <- matrix(lower, ncol = 1)
-    upper <- matrix(upper, ncol = 1)
-  }
+  # sapply() drops to a vector when h or the number of levels is 1
+  lower <- matrix(lower, nrow = h)
+  upper <- matrix(upper, nrow = h)
   colnames(lower) <- as.character(level)
   colnames(upper) <- as.character(level)
 

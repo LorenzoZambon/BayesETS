@@ -128,6 +128,33 @@ test_that("seasonal series with less than two periods: trend models get valid fi
   expect_true(all(is.finite(le)))
 })
 
+test_that("constant series: flat forecasts, intervals from the sigma^2 prior", {
+  width95 <- function(fc) as.numeric(fc$upper[, "95"] - fc$lower[, "95"])
+  for (level in c(5, 0, -2e6)) {
+    set.seed(1)
+    expect_warning(fit <- bets(ts(rep(level, 20), frequency = 4)), "y is constant")
+    expect_length(fit$model_components, 1)
+    expect_output(print(fit), "ANN")
+    fc <- predict(fit, h = 8)
+    expect_lt(max(abs(fc$mean - level)), 0.01 * max(abs(level), 1))
+    w <- width95(fc)
+    expect_true(all(w > 0))
+    expect_gt(w[8], w[1])   # wider with the horizon
+  }
+  # Narrower for longer series; the scale follows control$psi0
+  set.seed(1)
+  w_short <- width95(predict(suppressWarnings(bets(ts(rep(5, 5)))), h = 1, n_traj = 4000))
+  set.seed(1)
+  w_long <- width95(predict(suppressWarnings(bets(ts(rep(5, 50)))), h = 1, n_traj = 4000))
+  expect_lt(w_long, w_short)
+  w_psi <- vapply(c(1, 100), function(psi0) {
+  set.seed(1)
+    width95(predict(suppressWarnings(bets(ts(rep(5, 50)), control = list(psi0 = psi0))),
+                           h = 1, n_traj = 4000))
+  }, numeric(1))
+  expect_equal(w_psi[2] / w_psi[1], 10, tolerance = 1e-6)
+})
+
 test_that("bets() fit contains one result per model", {
   set.seed(1)
   fit <- bets(ts(rnorm(20)), model = list("ANN", "AAN"))

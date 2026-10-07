@@ -107,6 +107,32 @@ fit_bets_models <- function(y,
   )
 }
 
+# Fit of a constant series.  Its residuals are zero for every model and every
+# smoothing parameter, which the integrators reject as lost precision, but the
+# posterior under ETS(A,N,N) is available directly: the likelihood is flat in
+# alpha, which keeps its uniform prior; the final level is the constant; and
+# sigma^2 | y ~ Inv-Gamma((nu0 + L) / 2, psi0 / 2), as the residuals add
+# nothing to the prior scale.  psi0 cannot be estimated from the data, so by
+# default it is set relative to the level: (0.2 * |level|)^2, or 0.2^2 for a
+# series of zeros.  The intervals then shrink as the number of observations
+# grows and widen with the horizon.
+fit_constant_series <- function(y, ctrl, combination) {
+  level <- as.numeric(y[1])
+  psi0 <- ctrl$psi0
+  if (is.null(psi0)) psi0 <- (0.2 * (if (level != 0) abs(level) else 1))^2
+  n <- resolve_by_d(ctrl$N_final, 1)
+  result <- list(
+    thetas = matrix(stats::runif(n), ncol = 1, dimnames = list(NULL, "alpha")),
+    states = matrix(level, nrow = n, ncol = 1, dimnames = list(NULL, "l")),
+    sigma2s = psi0 / stats::rchisq(n, df = ctrl$nu0 + length(y)),
+    log_evidence = NA_real_,
+    model_components = c("A", "N", "N", "FALSE"),
+    integration = "constant series"
+  )
+  list(results = list(result), model_weights = 1, combination = combination,
+       fit_time_per_model = 0, elapsed_combination = 0)
+}
+
 # Default psi0, the scale of the sigma^2 prior (prior mean psi0 / (nu0 - 2))
 # and hence of the initial-state prior (see init_rb_prior()): the residual
 # variance of the naive forecast or, if smaller, of the seasonal naive one.
