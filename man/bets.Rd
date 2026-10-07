@@ -77,6 +77,12 @@ The \code{control} argument accepts a named list with the following entries: (TO
 \itemize{
 \item \code{prior_models}: optional prior model probabilities for BMA, passed as a
 list (...). Default: equal weights.
+\item \code{nu0}, \code{psi0}: prior of the error variance, a scaled inverse chi-squared
+with \code{nu0} degrees of freedom (default 3, must be greater than 2) and
+prior mean \code{psi0 / (nu0 - 2)}. The default \code{psi0 = NULL} uses the
+residual variance of the naive forecast or, if smaller, of the seasonal
+naive one. The prior covariance of the initial states is proportional to
+the error variance, and equals a data-based heuristic at its prior mean.
 \item \code{integration}: \code{"auto"} (default, see above), \code{"quadrature"} or \code{"ais"},
 to force one method for all models. Forcing quadrature is not recommended
 for models with 3 or more smoothing parameters: its error grows with the

@@ -25,8 +25,8 @@ test_that("Sobol scan log evidence matches quadrature for d = 2", {
   ctrl <- BETS:::resolve_bets_control(list(n_quad = 25L, N_final = 50L), 4)
   res_quad <- BETS:::fit_bets_models(y, mc, ctrl, integration = "quadrature")$results[[1]]
 
-  # Same psi0 as fit_bets_models() uses for frequency > 1.
-  ctrl$psi0 <- 0.5 * (mean(diff(y, lag = 4)^2) + mean(diff(y)^2))
+  # Same psi0 as fit_bets_models() uses by default.
+  ctrl$psi0 <- BETS:::default_psi0(y)
   theta_names <- c("alpha", "gamma")
   prior <- BETS:::init_rb_prior(y, mc[[1]], theta_names, ctrl)
   set.seed(1)

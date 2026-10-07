@@ -41,7 +41,7 @@ bets_control_defaults <- function(freq = 1) {
     is_df = 5,
     is_scale = 4,
     lr = 0.9,
-    c_inflate_eta = 1,
+    c_inflate_eta = 3,
     prior_models = NULL,
     integration = "auto",
     n_quad = c(21L, 21L, 9L, 7L),
@@ -62,7 +62,12 @@ resolve_bets_control <- function(control = list(), freq = 1) {
     control <- control[setdiff(names(control), unknown)]
   }
 
-  return(utils::modifyList(defaults, control))
+  ctrl <- utils::modifyList(defaults, control)
+  # The prior mean of sigma^2, psi0 / (nu0 - 2), must exist (see init_rb_prior())
+  if (!is.numeric(ctrl$nu0) || length(ctrl$nu0) != 1 || !(ctrl$nu0 > 2)) {
+    stop("control$nu0 must be a single number greater than 2")
+  }
+  ctrl
 }
 
 # Seasonal period of y, with the rules of forecast::ets(): a frequency below 1

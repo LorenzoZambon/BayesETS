@@ -52,6 +52,12 @@
 #'
 #' - `prior_models`: optional prior model probabilities for BMA, passed as a
 #' list (...). Default: equal weights.
+#' - `nu0`, `psi0`: prior of the error variance, a scaled inverse chi-squared
+#'   with `nu0` degrees of freedom (default 3, must be greater than 2) and
+#'   prior mean `psi0 / (nu0 - 2)`. The default `psi0 = NULL` uses the
+#'   residual variance of the naive forecast or, if smaller, of the seasonal
+#'   naive one. The prior covariance of the initial states is proportional to
+#'   the error variance, and equals a data-based heuristic at its prior mean.
 #' - `integration`: `"auto"` (default, see above), `"quadrature"` or `"ais"`,
 #'   to force one method for all models. Forcing quadrature is not recommended
 #'   for models with 3 or more smoothing parameters: its error grows with the

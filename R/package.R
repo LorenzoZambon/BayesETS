@@ -30,11 +30,8 @@ fit_bets_models <- function(y,
   n_models <- length(model_components)
   need_pointwise <- (combination == "stacking")
 
-  # set psi0 as either the MSE of the naive (if frequency = 1) or
-  # the average of the MSEs of the naive and seasonal naive (if frequency > 1)
   if (is.null(psi0)) {
-    mse_naive <- mean(diff(y, lag = 1)^2)
-    psi0 <- if (freq > 1) 0.5 * (mean(diff(y, lag = freq)^2) + mse_naive) else mse_naive
+    psi0 <- default_psi0(y)
     ctrl$psi0 <- psi0
   }
 
@@ -108,6 +105,20 @@ fit_bets_models <- function(y,
     fit_time_per_model = fit_time_per_model,
     elapsed_combination = elapsed_combination
   )
+}
+
+# Default psi0, the scale of the sigma^2 prior (prior mean psi0 / (nu0 - 2))
+# and hence of the initial-state prior (see init_rb_prior()): the residual
+# variance of the naive forecast or, if smaller, of the seasonal naive one.
+# Variances rather than MSEs, so that a drift does not inflate it, and the
+# smaller of the two because the other also contains the seasonal swings
+# (naive) or several periods of level changes (seasonal naive).  The floor
+# keeps it positive for deterministic series, e.g. a straight line.
+default_psi0 <- function(y) {
+  m <- stats::frequency(y)
+  psi0 <- stats::var(diff(y))
+  if (m > 1) psi0 <- min(psi0, stats::var(diff(y, lag = m)), na.rm = TRUE)
+  max(psi0, 1e-8 * stats::var(y))
 }
 
 # Integration method for one model: "auto" uses quadrature for up to 2

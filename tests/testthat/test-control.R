@@ -68,6 +68,11 @@ test_that("resolve_bets_control() rejects non-list input", {
   expect_error(BETS:::resolve_bets_control("not_a_list"), "control must be a named list")
 })
 
+test_that("resolve_bets_control() rejects nu0 <= 2 (no prior mean of sigma^2)", {
+  expect_error(BETS:::resolve_bets_control(list(nu0 = 2)), "nu0 must be")
+  expect_no_error(BETS:::resolve_bets_control(list(nu0 = 2.5)))
+})
+
 test_that("resolve_bets_control() rejects unknown keys", {
   expect_error(BETS:::resolve_bets_control(list(foo = 1)), "Unknown control entries")
 })

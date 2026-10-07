@@ -134,10 +134,12 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
     eta0_r_order <- eta0_free
   }
 
-  # Build full prior covariance matching the heuristic
-  # E[sigma^2] = psi0/(nu0-2) = psi0 (since nu0=3)
-  # So V0 = Sigma_heuristic / psi0
+  # Build full prior covariance matching the heuristic: eta | sigma^2 ~
+  # N(eta0, sigma^2 V0) with V0 = Sigma_heuristic / E[sigma^2], where
+  # E[sigma^2] = psi0 / (nu0 - 2), so that the prior covariance of eta is
+  # Sigma_heuristic at the prior mean of sigma^2, whatever nu0.
   Sigma_heuristic_free <- eta_init$Sigma * c_inflate_eta
+  prior_mean_sigma2 <- psi0 / (ctrl$nu0 - 2)
 
   # Expand to include the m-th seasonal slot, dropping the standard ETS
   # sum-to-zero constraint s_1 + ... + s_m = 0.  The design matrix X does NOT
@@ -174,10 +176,10 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
     reorder <- c(non_s_idx, s_idx_cpp)
 
     eta0_cpp <- as.numeric(eta0_r_order[reorder])
-    V0 <- Sigma_full[reorder, reorder, drop = FALSE] / psi0
+    V0 <- Sigma_full[reorder, reorder, drop = FALSE] / prior_mean_sigma2
   } else {
     eta0_cpp <- as.numeric(eta0_r_order)
-    V0 <- Sigma_full / psi0
+    V0 <- Sigma_full / prior_mean_sigma2
   }
 
   # Uniform theta prior on the admissible region: its log-density is constant.
