@@ -5,15 +5,10 @@ using namespace arma;
 // [[Rcpp::depends(RcppArmadillo)]]
 
 // ---------------------------------------------------------------------------
-// Build sufficient statistics X'X, X'y~, y~'y~ for the additive ETS
-// Rao-Blackwellization.  Each particle has its own theta; the design
-// matrix X(theta) and deterministic vector c(theta) are constructed in a
-// single recursive pass per particle, and the sufficient statistics are
-// accumulated on the fly so the full L x n_eta matrix never needs to be
-// stored simultaneously.
-//
-// eta = (l0, [b0], [s0, ..., s_{m-1}])
-// y_t = c_t(theta) + X_t(theta) * eta + eps_t
+// Sufficient statistics X'X, X'y~ and y~'y~ of the additive ETS model
+//   y_t = c_t(\theta) + X_t(\theta) \eta + e_t,  \eta = (l0, [b0], [m seasonal states]),
+// with y~ = y - c, for each row (\theta) of params. X and c are built in one
+// recursive pass, without storing X.
 // ---------------------------------------------------------------------------
 
 // [[Rcpp::export]]
@@ -62,8 +57,7 @@ List build_design_and_c_batch(NumericVector yR,
     double ph = trend ? phi_vec(i)  : 1.0;
     double ga = seas  ? gamma_vec(i) : 0.0;
 
-    // State coefficient vectors over eta and deterministic parts.
-    // coeff_l(j) = d(l_t)/d(eta_j), det_l = deterministic part of l_t
+    // States as linear functions of eta: coefficients (coeff) and constant (det)
     vec coeff_l(n_eta, fill::zeros);
     coeff_l(0) = 1.0;
     double det_l = 0.0;
@@ -81,28 +75,26 @@ List build_design_and_c_batch(NumericVector yR,
         coeff_s(k, s_offset + k) = 1.0;
     }
 
-    // Accumulators for sufficient statistics for this particle
+    // Sufficient statistics of this particle
     mat XtXi(n_eta, n_eta, fill::zeros);
     vec Xtyi(n_eta, fill::zeros);
     double ytyi = 0.0;
 
-    // Preallocate temporaries outside the t-loop to avoid N*L heap allocations
+    // Temporaries, allocated once
     vec fc(n_eta), lp_coeff(n_eta), new_coeff_l(n_eta), new_coeff_b(n_eta);
 
     for (int t = 0; t < L; t++) {
-      // Level + trend part of forecast — also used directly for state updates.
+      // Level + trend part of the forecast (also used in the state update)
       fc = coeff_l;
       double fd = det_l;
       if (trend) {
         fc += ph * coeff_b;
         fd += ph * det_b;
       }
-      // lp_coeff = coeff_l + ph*coeff_b is now in fc (pre-seasonal).
-      // Capture it once here; avoids a redundant recomputation further down.
       lp_coeff = fc;
       double lp_det = fd;
 
-      // Add seasonal contribution to complete the full forecast vector.
+      // Seasonal part
       int sj = 0;
       if (seas) {
         sj = t % m;
@@ -110,29 +102,27 @@ List build_design_and_c_batch(NumericVector yR,
         fd += det_s(sj);
       }
 
-      // y_tilde_t = y_t - c_t(theta) = y_t - forecast_det
+      // y~_t = y_t - c_t(\theta)
       double yt = y(t) - fd;
 
-      // Accumulate sufficient statistics: rank-1 updates
+      // Rank-1 updates
       XtXi += fc * fc.t();
       Xtyi += fc * yt;
       ytyi += yt * yt;
 
-      // l_{t+1} = l_t + phi*b_t + alpha*e_t
-      //         = (l_t + phi*b_t) + alpha*(y_t - forecast)
-      // coeff: lp_coeff + alpha*(-fc) = lp_coeff - alpha*fc
+      // l_{t+1} = l_t + \phi b_t + \alpha e_t, with e_t = y~_t - fc' \eta
       new_coeff_l = lp_coeff - al * fc;
       double new_det_l = lp_det + al * yt;
 
       double new_det_b = 0.0;
       if (trend) {
-        // b_{t+1} = phi*b_t + beta*e_t
+        // b_{t+1} = \phi b_t + \beta e_t
         new_coeff_b = ph * coeff_b - be * fc;
         new_det_b = ph * det_b + be * yt;
       }
 
       if (seas) {
-        // s_{j,t+m} = s_{j,t} + gamma*e_t (only for j = t%m)
+        // s_{t+m} = s_t + \gamma e_t
         coeff_s.row(sj) -= ga * fc.t();
         det_s(sj) = det_s(sj) + ga * yt;
       }
@@ -162,17 +152,10 @@ List build_design_and_c_batch(NumericVector yR,
 
 
 // ---------------------------------------------------------------------------
-// Marginal log-likelihood after analytically integrating out eta and sigma^2.
-//
-// Uses Woodbury identity / matrix determinant lemma to avoid L x L ops.
-//
-// y~ | theta ~ MVT(nu0, X*eta0, (psi0/nu0)*(I + X*V0*X'))
-//
-// log|I + X*V0*X'| = log|V0^{-1} + X'X| + log|V0|
-// (I + X*V0*X')^{-1} = I - X*(V0^{-1} + X'X)^{-1}*X'
-//
-// Also returns posterior parameters Vn, mu_n, posterior_scale for
-// posterior reconstruction of eta and sigma^2.
+// Log marginal likelihood p(y | \theta), with \eta and \sigma^2 integrated out:
+//   y~ | \theta ~ t_{\nu_0}(X \eta_0, (\psi_0 / \nu_0) (I + X V_0 X'))
+// computed with the Woodbury identity and the determinant lemma (no L x L
+// matrices). Optionally returns the posterior parameters of \eta and \sigma^2.
 // ---------------------------------------------------------------------------
 
 // [[Rcpp::export]]
@@ -202,11 +185,10 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
   double half_L_log_nu_pi = 0.5 * L * log(nu0 * datum::pi);
   double L_log_psi0_nu0 = L * log(psi0 / nu0);
 
-  // Precompute V0inv * eta0
   vec V0inv_eta0 = V0inv * eta0;
 
-  // Only allocate posterior storage when the caller needs it
-  cube Rn_cube;  // L_M^{-1} per particle (lower triangular); t(Rn)*Rn = Vn = M^{-1}
+  // Posterior output, if requested
+  cube Rn_cube;  // L_M^{-1}: t(Rn) Rn = M^{-1} = V_n
   mat  mu_n_mat;
   vec  posterior_scale;
   if (return_posterior) {
@@ -223,8 +205,7 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
     // M = V0inv + XtX  (posterior precision)
     mat M = V0inv + XtXi;
 
-    // Single lower Cholesky of M — yields log|M|, quadratic form, and
-    // (on the posterior path) posterior mean and MVN sampling factor.
+    // Cholesky of M: log|M|, quadratic form and posterior parameters
     mat L_M;
     if (!arma::chol(L_M, M, "lower")) {
       // M not positive definite: degenerate particle
@@ -233,32 +214,29 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
       continue;
     }
 
-    // log|I + X*V0*X'| = log|M| + log|V0|;  log|M| = 2 * sum(log diag(L_M))
+    // log|I + X V0 X'| = log|M| + log|V0|
     double log_det_M = 2.0 * arma::sum(arma::log(L_M.diag()));
     double log_det_IpXVXt = log_det_M + log_det_V0;
 
-    // Quadratic form: Xtr' * M^{-1} * Xtr = ||L_M^{-1} * Xtr||^2
+    // Xtr' M^{-1} Xtr = ||L_M^{-1} Xtr||^2
     double rtr = ytyi - 2.0 * dot(eta0, Xtyi) + dot(eta0, XtXi * eta0);
     vec Xtr = Xtyi - XtXi * eta0;
     vec Lm_inv_Xtr = arma::solve(arma::trimatl(L_M), Xtr);
     double quad_woodbury = arma::dot(Lm_inv_Xtr, Lm_inv_Xtr);
 
     if (return_posterior) {
-      // mu_n = M^{-1} * (V0inv*eta0 + Xty) via two triangular solves
+      // mu_n = M^{-1} (V0^{-1} eta0 + X'y~)
       vec rhs = V0inv_eta0 + Xtyi;
       vec tmp = arma::solve(arma::trimatl(L_M), rhs);
       vec mu_n = arma::solve(arma::trimatu(L_M.t()), tmp);
       mu_n_mat.col(i) = mu_n;
-      // Rn = L_M^{-1} (lower triangular). In R: crossprod(Rn, z) = t(Rn)*z
-      // gives draws with covariance t(Rn)*Rn = L_M^{-T}*L_M^{-1} = M^{-1} = Vn.
+      // Rn = L_M^{-1}: t(Rn) z has covariance V_n
       Rn_cube.slice(i) = arma::inv(arma::trimatl(L_M));
     }
 
-    // quad >= 0 in exact arithmetic, but it is the difference of two terms
-    // that become huge when the recursion explodes (theta outside the stable
-    // region, long series).  If nearly all digits cancel, the value is noise:
-    // mark the particle as invalid instead of clamping, so that rounding can
-    // never produce a spuriously high likelihood.
+    // quad >= 0, but it is a difference of two terms that are huge when the
+    // recursion explodes (unstable \theta): if most digits cancel, the particle
+    // is invalid (clamping at 0 would give a spurious high likelihood)
     double quad = rtr - quad_woodbury;
     if (!std::isfinite(quad) || quad <= 1e-8 * rtr) {
       log_ml(i) = -datum::inf;
@@ -266,12 +244,7 @@ List marginal_likelihood_rb(arma::cube XtX_cube,
       continue;
     }
 
-    // Marginal Student-t log-likelihood
-    // log p(y|theta) = lgamma((nu0+L)/2) - lgamma(nu0/2)
-    //                - L/2 * log(nu0*pi)
-    //                - 0.5 * log|Sigma_y|
-    //                - (nu0+L)/2 * log(1 + quad/psi0)
-    // where log|Sigma_y| = L*log(psi0/nu0) + log|I+X*V0*X'|
+    // Student-t log-density, with log|\Sigma_y| = L log(\psi_0 / \nu_0) + log|I + X V_0 X'|
     double log_det_Sigma_y = L_log_psi0_nu0 + log_det_IpXVXt;
     log_ml(i) = lgamma_half_nu_L - lgamma_half_nu
               - half_L_log_nu_pi

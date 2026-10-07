@@ -3,9 +3,8 @@
 # ---------------------------------------------------------------------------
 
 test_that("co2 ETS(A,A,A): no spurious evidence from exploding recursions", {
-  # Long, very smooth series: many theta in the prior support make the
-  # recursion explode.  The residual quadratic form used to be clamped at 0
-  # there, which gave log evidence ~ +600 instead of ~ -141.
+  # The recursion explodes for many theta; the old clamp of the quadratic form
+  # at 0 gave log evidence ~ +600 instead of ~ -141
   mc <- BETS:::coerce_model_components("AAA", 12)
   ctrl <- BETS:::resolve_bets_control(list(N_final = 50L), 12)
   le <- vapply(c("quadrature", "ais"), function(im) {
@@ -17,9 +16,7 @@ test_that("co2 ETS(A,A,A): no spurious evidence from exploding recursions", {
 })
 
 test_that("lost-precision evaluations are invalid, not spikes (uncentred co2)", {
-  # At unstable theta the residual quadratic form loses all its digits; the
-  # old clamp at 0 turned these points into log g ~ +600.  Without centring,
-  # no point may exceed the values of the (numerically safe) centred series.
+  # Without centring, no point may exceed the values of the centred series
   mc <- c("A", "A", "A", "FALSE")
   tn <- c("alpha", "beta", "gamma")
   make_lg <- function(y) {
@@ -46,8 +43,7 @@ test_that("prior_scan() returns the candidates sorted by log g", {
 })
 
 test_that("the mode search is not trapped in the unstable region (nottem, AAN)", {
-  # From the heuristic start, L-BFGS-B stops 15.8 log units below the best
-  # point of a 1024-point prior scan; from the default 64-point scan it does not.
+  # From the heuristic point, the mode search stops 15.8 log units too low
   y <- nottem - mean(nottem[1:12])
   mc <- c("A", "A", "N", "FALSE")
   tn <- c("alpha", "beta")

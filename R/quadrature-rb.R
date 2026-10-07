@@ -1,17 +1,16 @@
-##############################################################################
-### Rao-Blackwellized Adaptive Gauss-Hermite Quadrature ###
-###
-### Alternative to adaptive_is_rb(): theta is integrated out deterministically
-### on a tensor Gauss-Hermite grid centred at the mode of the integrand and
-### scaled by its inverse Hessian, in the unconstrained coordinates z of
-### transform_unconstrained_to_theta().  eta and sigma^2 are integrated out
-### analytically exactly as in adaptive_is_rb().
-##############################################################################
+################################################################################
+# ADAPTIVE GAUSS-HERMITE QUADRATURE
+#
+# Alternative to AIS: the smoothing parameters are integrated on a
+# Gauss-Hermite grid at the posterior mode, scaled by the inverse Hessian (in
+# the unconstrained space). The initial states and \sigma^2 are integrated
+# analytically, as in AIS.
 
+# Fit of one model by quadrature
 quadrature_rb <- function(y, model_components, ctrl,
                           return_pointwise = FALSE) {
   N_final_raw <- ctrl$N_final
-  n_quad_raw  <- ctrl$n_quad    # scalar or length-4 vector; resolved per d below
+  n_quad_raw  <- ctrl$n_quad
   nu0         <- ctrl$nu0
   verbose     <- ctrl$verbose
 
@@ -22,15 +21,14 @@ quadrature_rb <- function(y, model_components, ctrl,
   theta_names <- c("alpha", if (trend) c("beta", if (damped) "phi"), if (seas) "gamma")
   n_theta <- length(theta_names)
 
-  # Resolve dimension-dependent scalars now that d = n_theta is known.
+  # Values for d = n_theta
   N_final <- resolve_by_d(N_final_raw, n_theta)
   n_quad  <- resolve_by_d(n_quad_raw,  n_theta)
 
-  # ---- Set up eta prior and the integrand ----
   prior <- init_rb_prior(y, model_components, theta_names, ctrl)
   log_g_rb <- make_log_g_rb(y, model_components, theta_names, ctrl, prior)
 
-  # ---- Quadrature, starting the mode search at the best point of a prior scan ----
+  # Quadrature, with the mode search starting at the best point of a prior scan
   t0 <- proc.time()[3]
   scan <- prior_scan(log_g_rb, theta_names, ctrl$n_scan)
   t_scan <- proc.time()[3] - t0
@@ -43,7 +41,7 @@ quadrature_rb <- function(y, model_components, ctrl,
     cat(sprintf("\n log evidence = %.4f\n", quad$log_evidence))
   }
 
-  # No finite node: this model will receive zero weight in BMA/stacking.
+  # No finite node: the model gets zero weight
   if (!is.finite(quad$log_evidence)) {
     warning("quadrature_rb: log g is not finite at any quadrature node")
     return(list(
@@ -55,12 +53,12 @@ quadrature_rb <- function(y, model_components, ctrl,
       n_iter = NA_integer_,
       prop_params = NULL,
       log_evidence = -Inf,
-      log_lik_pointwise = if (return_pointwise) matrix(-1e300, nrow = N_final, ncol = L) else NULL,  # use -1e300 instead of -Inf to avoid NaN in logsumexp
+      log_lik_pointwise = if (return_pointwise) matrix(-1e300, nrow = N_final, ncol = L) else NULL,  # not -Inf: NaN in logsumexp
       timing = timing
     ))
   }
 
-  # ---- Posterior Reconstruction ----
+  # Posterior draws, from the weighted nodes
   t0 <- proc.time()[3]
   post <- draw_rb_posterior(y, model_components,
                             theta_particles = quad$node_eval$theta,
@@ -85,14 +83,12 @@ quadrature_rb <- function(y, model_components, ctrl,
 }
 
 
-##############################################################################
-### Laplace Helpers (shared by quadrature_rb and adaptive_is_rb) ###
+################################################################################
+# INTEGRAND AND MODE (shared with adaptive_is_rb())
 
-# log g(z) = log p(y | theta(z)) + log p(theta(z)) + log |d theta / d z|, as a
-# function of an n x d matrix Z of unconstrained points, evaluated for all rows
-# in one batched C++ call.  The integral of g over z is the model evidence
-# p(y).  Also returns theta and the marginal_likelihood_rb() output at Z, which
-# draw_rb_posterior() needs.
+# Integrand log g(z) = log p(y | \theta(z)) + log p(\theta(z)) + log |d\theta / dz|,
+# whose integral is the evidence p(y). Evaluated at the rows of Z in one C++
+# call; also returns \theta and the output of marginal_likelihood_rb().
 make_log_g_rb <- function(y, model_components, theta_names, ctrl, prior) {
   nu0     <- ctrl$nu0
   phi_min <- ctrl$phi_min
@@ -136,14 +132,10 @@ make_log_g_rb <- function(y, model_components, theta_names, ctrl, prior) {
   }
 }
 
-# Cheap scan of the prior that starts the mode search: the heuristic point, a
-# small-smoothing point and n_scan randomised Sobol points (each unconstrained
-# coordinate Logistic(0,1), i.e. uniform on its transformed range), evaluated
-# in one batch.  Returns all candidates and their log g, best first; the best
-# one starts laplace_mode().  Starting there avoids local modes in the unstable
-# region of seasonal trend models, where the recursion explodes and log g is
-# rough (the heuristic point lies there for monthly AAA).  The other
-# candidates are meant to seed a future search for further modes.
+# Scan of the prior to start the mode search: a heuristic point, a point with
+# small smoothing and n_scan randomised Sobol points, evaluated in one batch.
+# Returns the points and their log g, best first. Avoids local modes in the
+# unstable region (e.g. monthly AAA).
 prior_scan <- function(log_g_fn, theta_names, n_scan = 64) {
   d <- length(theta_names)
   Z <- rbind(heuristic_z_start(theta_names), small_smoothing_z(theta_names))
@@ -158,21 +150,19 @@ prior_scan <- function(log_g_fn, theta_names, n_scan = 64) {
   list(Z = Z[o, , drop = FALSE], log_g = log_g[o])
 }
 
-# Heuristic point: z = 0 (centre of each range), except phi at z = 1 (damping
-# usually high).
+# Heuristic point: centre of each range (z = 0), phi higher (z = 1)
 heuristic_z_start <- function(theta_names) {
   as.numeric(theta_names == "phi")
 }
 
-# Small smoothing: alpha = 0.2, beta = 0.05 * alpha, gamma = 0.05 * (1 - alpha),
-# phi at z = 1.
+# Point with small smoothing parameters
 small_smoothing_z <- function(theta_names) {
   z <- c(alpha = stats::qlogis(0.2), beta = stats::qlogis(0.05), phi = 1, gamma = stats::qlogis(0.05))
   unname(z[theta_names])
 }
 
-# Mode zhat of log g and Hessian H of -log g there, plus Lmat with
-# Lmat %*% t(Lmat) = H^{-1} (eigenvalues of H floored at lambda_floor).
+# Mode zhat of log g and Hessian H of -log g there, with Lmat such that
+# Lmat t(Lmat) = H^{-1} (eigenvalues of H floored at lambda_floor)
 laplace_mode <- function(log_g_fn, z_start,
                          fd_step = 1e-3,
                          lambda_floor = 1e-2,
@@ -181,22 +171,20 @@ laplace_mode <- function(log_g_fn, z_start,
   d <- length(z_start)
   timing <- list(mode = 0, hessian = 0)
 
-  # Finite-valued -log g for the optimiser and the difference stencils: optim
-  # may wander into regions where the marginal likelihood is -Inf or NaN.
+  # -log g, with a finite penalty where log g is not finite
   neg_log_g <- function(Z) {
     f <- -log_g_fn(Z)$log_g
     f[!is.finite(f)] <- penalty
     f
   }
 
-  # ---- Mode ----
-  # z_bound keeps log_jac finite (inv_logit saturates to 0/1 beyond |z| ~ 37).
+  # Mode (z_bound keeps log_jac finite)
   t0 <- proc.time()[3]
   E_fd <- diag(fd_step, d)
   opt <- stats::optim(
     par = z_start,
     fn  = function(z) neg_log_g(matrix(z, nrow = 1)),
-    # Central differences, all 2d points in one batch.
+    # Central differences, in one batch
     gr  = function(z) {
       f <- neg_log_g(rbind(sweep(E_fd, 2, z, "+"), sweep(-E_fd, 2, z, "+")))
       (f[seq_len(d)] - f[d + seq_len(d)]) / (2 * fd_step)
@@ -208,7 +196,7 @@ laplace_mode <- function(log_g_fn, z_start,
   zhat <- opt$par
   timing$mode <- proc.time()[3] - t0
 
-  # ---- Curvature ----
+  # Hessian
   t0 <- proc.time()[3]
   H <- fd_hessian(neg_log_g, zhat, fd_step)
   H <- (H + t(H)) / 2
@@ -222,26 +210,21 @@ laplace_mode <- function(log_g_fn, z_start,
     lambda <- pmax(lambda, lambda_floor)
   }
   Lmat <- eig$vectors %*% diag(lambda^(-1/2), d)
-  log_det_H <- sum(log(lambda))  # of the floored H, consistent with Lmat
+  log_det_H <- sum(log(lambda))  # floored H, as Lmat
   timing$hessian <- proc.time()[3] - t0
 
   list(zhat = zhat, H = H, Lmat = Lmat, log_det_H = log_det_H, optim = opt, timing = timing)
 }
 
 
-##############################################################################
-### Quadrature Helpers ###
+################################################################################
+# QUADRATURE HELPERS
 
-# Adaptive Gauss-Hermite quadrature of g = exp(log g) over R^d.
-#   log_g_fn : function(Z) of an n x d matrix of points (one per row) returning
-#              a list whose element log_g holds the n values of log g.  Any other
-#              elements are passed through for the nodes (see node_eval).
-#   z_start  : starting point of the mode search.
-#   n_quad   : number of one-dimensional nodes; the grid has n_quad^d nodes.
-# The grid is z_i = zhat + Lmat %*% x_i with Lmat %*% t(Lmat) = H^{-1}, where
-# zhat is the mode of log g and H the Hessian of -log g there.  Then
-#   integral g(z) dz = |Lmat| * E[ g(zhat + Lmat X) / phi_d(X) ],  X ~ N(0, I_d),
-# which is exact for any Lmat; the expectation is taken by Gauss-Hermite.
+# Adaptive Gauss-Hermite quadrature of g = exp(log g) on R^d, with n_quad nodes
+# per dimension. log_g_fn(Z) returns a list with the values log_g at the rows
+# of Z (other elements are kept in node_eval); z_start starts the mode search.
+# Nodes z_i = zhat + Lmat x_i, and
+#   \int g(z) dz = |Lmat| E[g(zhat + Lmat X) / \phi_d(X)],  X ~ N(0, I_d)
 adaptive_gh_quadrature <- function(log_g_fn, z_start, n_quad,
                                    fd_step = 1e-3,
                                    lambda_floor = 1e-2,
@@ -249,7 +232,7 @@ adaptive_gh_quadrature <- function(log_g_fn, z_start, n_quad,
                                    penalty = 1e10) {
   d <- length(z_start)
 
-  # ---- Steps 1-2: Mode and curvature ----
+  # Mode and Hessian
   lap <- laplace_mode(log_g_fn, z_start, fd_step = fd_step, lambda_floor = lambda_floor,
                       z_bound = z_bound, penalty = penalty)
   zhat <- lap$zhat
@@ -257,22 +240,21 @@ adaptive_gh_quadrature <- function(log_g_fn, z_start, n_quad,
   log_det_H <- lap$log_det_H
   timing <- c(lap$timing, list(nodes = 0))
 
-  # ---- Steps 3-4: Grid ----
+  # Grid
   gh  <- gauss_hermite_prob(n_quad)
   idx <- as.matrix(expand.grid(rep(list(seq_len(n_quad)), d)))
   G   <- matrix(gh$x[idx], ncol = d)
-  log_wq <- rowSums(matrix(log(gh$w[idx]), ncol = d))  # log of row products of w
+  log_wq <- rowSums(matrix(log(gh$w[idx]), ncol = d))  # log-weights of the nodes
   Z <- sweep(G %*% t(Lmat), 2, zhat, "+")
 
-  # ---- Step 5: Evaluate log g at all nodes in one batch ----
+  # log g at all nodes, in one batch
   t0 <- proc.time()[3]
   node_eval <- log_g_fn(Z)
   log_g <- node_eval$log_g
   log_g[!is.finite(log_g)] <- -Inf
   timing$nodes <- proc.time()[3] - t0
 
-  # ---- Step 6: Combine ----
-  # corr_i = log[ |Lmat| * g(Z_i) / phi_d(G_i) ]
+  # log of |Lmat| g(Z_i) / \phi_d(G_i)
   corr <- log_g + 0.5 * rowSums(G^2) - 0.5 * log_det_H + (d / 2) * log(2 * pi)
   log_terms <- log_wq + corr
   lt_max <- max(log_terms)
@@ -299,17 +281,16 @@ adaptive_gh_quadrature <- function(log_g_fn, z_start, n_quad,
   )
 }
 
-# Hessian of f at z by central differences.  f takes an n x d matrix of points
-# and returns n values; the whole stencil (2 d^2 + 1 points) is one call.
+# Hessian of f at z by central differences, all points in one call of f
 fd_hessian <- function(f, z, h) {
   d  <- length(z)
   E  <- diag(h, d)
-  ij <- which(upper.tri(E), arr.ind = TRUE)   # pairs i < j (none if d = 1)
+  ij <- which(upper.tri(E), arr.ind = TRUE)   # pairs i < j
   P  <- E[ij[, 1], , drop = FALSE]
   Q  <- E[ij[, 2], , drop = FALSE]
   n_pairs <- nrow(ij)
 
-  # Rows: z, z + h e_i, z - h e_i, then z + h(+-e_i +-e_j) for each pair.
+  # z, z + h e_i, z - h e_i, z + h (+-e_i +-e_j)
   offsets <- rbind(0, E, -E, P + Q, P - Q, -P + Q, -P - Q)
   fv <- f(sweep(offsets, 2, z, "+"))
 
@@ -329,9 +310,8 @@ fd_hessian <- function(f, z, h) {
   H
 }
 
-# One-dimensional Gauss-Hermite rule in the probabilists' convention:
-# sum(w * f(x)) ~ E[f(X)], X ~ N(0, 1).  statmod::gauss.quad() returns the
-# physicists' rule (weight function exp(-x^2), weights summing to sqrt(pi)).
+# Gauss-Hermite rule for E[f(X)], X ~ N(0, 1) (statmod gives the rule for the
+# weight function exp(-x^2))
 gauss_hermite_prob <- function(k) {
   gq <- statmod::gauss.quad(k, kind = "hermite")
   x <- sqrt(2) * gq$nodes

@@ -2,17 +2,17 @@
 % Please edit documentation in R/helpers.R
 \name{ets_label}
 \alias{ets_label}
-\title{Label ETS model components}
+\title{Label of an ETS model (e.g. "AAdN")}
 \usage{
 ets_label(model_components)
 }
 \arguments{
-\item{model_components}{A character vector of ETS model components.}
+\item{model_components}{Vector (error, trend, season, damped).}
 }
 \value{
-A string representing the ETS model label.
+Character string.
 }
 \description{
-Label ETS model components
+Label of an ETS model (e.g. "AAdN")
 }
 \keyword{internal}

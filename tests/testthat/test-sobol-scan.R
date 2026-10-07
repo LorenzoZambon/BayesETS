@@ -2,8 +2,7 @@
 # sobol_scan_rb(): importance weights of the Sobol scan
 # ---------------------------------------------------------------------------
 
-# ETS(A,N,A) series: for d >= 2 the Sobol proposal is not uniform on the
-# admissible region (gamma = (1 - alpha) * u has density 1 / (1 - alpha)).
+# Simulated ETS(A,N,A) series
 sim_ana <- function(L, m, alpha, gamma, sigma) {
   l <- 100
   s <- 6 * sin(2 * pi * seq_len(m) / m)
@@ -36,6 +35,6 @@ test_that("Sobol scan log evidence matches quadrature for d = 2", {
                                log_prior_theta_const = prior$log_prior_theta_const)
   lw_max <- max(scan$log_w)
   log_evidence_scan <- lw_max + log(mean(exp(scan$log_w - lw_max)))
-  # The weights that treated the Sobol points as prior draws were off by +0.38 here.
+  # Weights treating the Sobol points as prior draws were off by +0.38
   expect_lt(abs(log_evidence_scan - res_quad$log_evidence), 0.02)
 })

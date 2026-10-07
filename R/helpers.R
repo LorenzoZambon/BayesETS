@@ -1,10 +1,11 @@
-﻿##############################################################################
-### Helpers ###
+﻿################################################################################
+# HELPERS
 
-#' Compute Stacking Weights
+#' Stacking weights
 #'
-#' @param log_lik_list A list of matrices containing pointwise log-likelihoods for each model.
-#' @return A vector of stacking weights.
+#' @param log_lik_list List with one matrix of pointwise log-likelihoods
+#'   (draws x time) per model.
+#' @return Vector of stacking weights.
 #' @keywords internal
 compute_stacking_weights <- function(log_lik_list) {
   K <- length(log_lik_list)
@@ -46,22 +47,24 @@ compute_stacking_weights <- function(log_lik_list) {
   }
 }
 
-#' Label ETS model components
+#' Label of an ETS model (e.g. "AAdN")
 #'
-#' @param model_components A character vector of ETS model components.
-#' @return A string representing the ETS model label.
+#' @param model_components Vector (error, trend, season, damped).
+#' @return Character string.
 #' @keywords internal
 ets_label <- function(model_components) {
   d <- if (model_components[[4]] == "TRUE" && model_components[[2]] == "A") "d" else ""
   paste0(model_components[[1]], model_components[[2]], d, model_components[[3]])
 }
 
-#' Simulate Future Trajectories for an ETS model
+#' Future trajectories of the model combination
 #'
-#' @param bets_fit A BETS fit object.
-#' @param h The forecast horizon.
-#' @param n_traj The number of trajectories to simulate.
-#' @return A matrix of future trajectories.
+#' Each model contributes a number of trajectories proportional to its weight.
+#'
+#' @param bets_fit The `fit` element of a `bets` object.
+#' @param h Forecast horizon.
+#' @param n_traj Number of trajectories.
+#' @return Matrix of trajectories (n_traj x h).
 #' @keywords internal
 simulate_future_trajectories <- function(bets_fit, h = 10, n_traj = 1000) {
   n_models <- length(bets_fit$results)
@@ -88,9 +91,7 @@ simulate_future_trajectories <- function(bets_fit, h = 10, n_traj = 1000) {
   do.call(rbind, traj_list)
 }
 
-# Compute weighted mean and *shrinkage-regularised* covariance for the theta
-# sub-block only, analogous to the adaptive update in AIS (update_joint_proposal).
-# Returns list(mu, Sigma).
+# Weighted mean and shrunk covariance of the draws: list(mu, Sigma)
 sobol_weighted_theta_params <- function(theta_unc_mat, w, min_var = 1e-6, lambda_shr = 0.1) {
   w_mu <- colSums(w * theta_unc_mat)
   centered <- sweep(theta_unc_mat, 2, w_mu, "-")
@@ -101,7 +102,7 @@ sobol_weighted_theta_params <- function(theta_unc_mat, w, min_var = 1e-6, lambda
   list(mu = w_mu, Sigma = Sigma_w)
 }
 
-# Evaluates log-density of multivariate t distribution given upper Cholesky factor
+# Log-density of a multivariate t, given the upper Cholesky factor of the scale
 ldmvt_chol <- function(devs, chol_R, df) {
   d           <- ncol(devs)
   z           <- forwardsolve(t(chol_R), t(devs))

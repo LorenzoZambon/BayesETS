@@ -1,47 +1,39 @@
-##############################################################################
-### Transformation Functions (Theta <-> Unconstrained) ###
+################################################################################
+# PARAMETER TRANSFORMATION
 
-# Logit and Inverse Logit
-inv_logit <- stats::plogis   # compiled-C equivalent of 1/(1+exp(-x))
+inv_logit <- stats::plogis
 
-# Transform Unconstrained -> Constrained
-# Returns list(theta, log_jac)
-# theta_unc: matrix of unconstrained parameters
+# Smoothing parameters from the unconstrained ones (matrix theta_unc), with the
+# log-Jacobian of the transformation: list(theta, log_jac)
 transform_unconstrained_to_theta <- function(theta_unc, param_names, phi_min, phi_max) {
   N <- nrow(theta_unc)
   theta <- matrix(0, nrow = N, ncol = length(param_names))
   colnames(theta) <- param_names
 
-  # Initialize log-Jacobian
   log_jac <- numeric(N)
 
-  # 1. Alpha: logit(alpha)
-  # alpha = inv_logit(x)
+  # alpha in (0, 1)
   if ("alpha" %in% param_names) {
     p <- inv_logit(theta_unc[, "alpha"])
     theta[, "alpha"] <- p
     log_jac <- log_jac + log(p) + log(1 - p)
   }
 
-  # 2. Beta: logit(beta / alpha)
+  # beta in (0, alpha)
   if ("beta" %in% param_names) {
     p <- inv_logit(theta_unc[, "beta"])
-    # beta = alpha * p
     theta[, "beta"] <- theta[, "alpha"] * p
-    # Jacobian adjustment for beta: p * (1-p) * alpha
     log_jac <- log_jac + log(p) + log(1 - p) + log(theta[, "alpha"])
   }
 
-  # 3. Gamma: logit(gamma / (1 - alpha))
+  # gamma in (0, 1 - alpha)
   if ("gamma" %in% param_names) {
     p <- inv_logit(theta_unc[, "gamma"])
-    # gamma = (1-alpha) * p
     theta[, "gamma"] <- (1 - theta[, "alpha"]) * p
-    # Jacobian adjustment: p * (1-p) * (1-alpha)
     log_jac <- log_jac + log(p) + log(1 - p) + log(1 - theta[, "alpha"])
   }
 
-  # 4. Phi: logit((phi - min)/(max - min))
+  # phi in (phi_min, phi_max)
   if ("phi" %in% param_names) {
     p <- inv_logit(theta_unc[, "phi"])
     theta[, "phi"] <- p * (phi_max - phi_min) + phi_min
@@ -52,15 +44,14 @@ transform_unconstrained_to_theta <- function(theta_unc, param_names, phi_min, ph
 }
 
 
-##############################################################################
-### Joint Proposal Functions ###
+################################################################################
+# PRIOR OF THE INITIAL STATES
 
-.VAR_FLOOR <- 1e-6
-.FB_MULT <- 1e-4
+.VAR_FLOOR <- 1e-6   # floor of the prior variance of l
+.FB_MULT <- 1e-4     # floor of the prior variances of b and s, relative to l
 
-# Compute heuristic initialization for parameters of mvt prior for initial states
-# Returns list of named vectors (init_mu, init_var)
-# names: "l", optionally "b", "s1..sm"
+# Heuristic prior mean and (diagonal) covariance of the initial states
+# (l, b, s1, ..., s_{m-1})
 init_eta_params <- function(y, model_components, eta_df = NULL,
                             var_l_mult = 1,
                             var_b_mult = 1,
@@ -77,33 +68,32 @@ init_eta_params <- function(y, model_components, eta_df = NULL,
 
   l <- mean(y[1:m])
   var_l <- var_l_mult * mse_naive
-  if (is.na(var_l) || var_l <= 0) var_l <- .VAR_FLOOR  # fallback for constant series
+  if (is.na(var_l) || var_l <= 0) var_l <- .VAR_FLOOR
 
   init_mu <- l
   init_var <- var_l
 
   if (trend) {
     if (m > 1 && L > m) {
-      # Slope between the means of the first two periods; with fewer than 2 m
-      # observations, the second window is shifted back to end at L.
+      # Slope between the means of the first two periods (the second one
+      # shifted back if L < 2m)
       k <- min(m, L - m)
       b <- (mean(y[(k + 1):(k + m)]) - mean(y[1:m])) / k
     } else {
       b <- y[2] - y[1]
     }
     var_b <- var_b_mult * stats::var(seas_diffs / n_lags)
-    # ensure b variance is not too small relative to l + fallback if seas_diffs variance is 0
     var_b <- max(var_b, .FB_MULT * var_l, na.rm = T)
     init_mu <- c(init_mu, b)
     init_var <- c(init_var, var_b)
   }
 
   if (seas && m > 1) {
+    # Prior variance: mean variance within a period
     s <- rep(0, m - 1)
     y_mat <- matrix(c(y, rep(NA, -L %% m)), nrow = m)
     seas_vars <- apply(y_mat, 2, stats::var, na.rm = TRUE)
     var_s_raw <- var_s_mult * mean(seas_vars, na.rm = TRUE)
-    # ensure s variance is not too small relative to l + fallback if seas_diffs variances are 0
     var_s_raw <- max(var_s_raw, .FB_MULT * var_l, na.rm = T)
     var_s <- rep(var_s_raw, m - 1)
     init_mu <- c(init_mu, s)
@@ -117,14 +107,11 @@ init_eta_params <- function(y, model_components, eta_df = NULL,
   list(mus = init_mu, Sigma = Sigma, df = eta_df)
 }
 
-##############################################################################
+################################################################################
+# SOBOL SCAN (old integration method, no longer used by bets())
 
-##############################################################################
-### Random-Search Initialization (Sobol QMC) ###
-
-# Evaluate the profile-RSS objective (eta analytically integrated out) for a
-# batch of N theta candidates supplied as an N x d unconstrained matrix.
-#   failed      : TRUE when the scan could not be completed
+# Importance sampling of the smoothing parameters from randomised Sobol points
+# (logistic in the unconstrained space). failed = TRUE if the scan fails.
 sobol_scan_rb <- function(y, model_components, theta_names, phi_min, phi_max,
                           n_sobol, eta0, V0, nu0, psi0, L,
                           log_prior_theta_const, eta_df = 5L) {
@@ -135,15 +122,8 @@ sobol_scan_rb <- function(y, model_components, theta_names, phi_min, phi_max,
   damped <- (model_components[[4]] == "TRUE")
   y_vec  <- as.numeric(y)
 
-  # Generate Sobol points in (0,1)^d with digital-shift randomisation.
-  # qlogis maps them to unconstrained space, where each coordinate is
-  # Logistic(0,1).  For d >= 2 this proposal is NOT uniform on the admissible
-  # ETS region (e.g. gamma = (1 - alpha) * u has density 1 / (1 - alpha)), so
-  # the IS weights below use its exact density.  The points are not clipped:
-  # clipping piles the tail mass onto the clip boundary, which no density
-  # accounts for, and the tails (e.g. alpha near 1) can carry posterior mass.
-  # No fixed anchor point is appended either: a deterministic point inside a
-  # random sample biases the IS estimate.
+  # Randomised Sobol points, mapped to the unconstrained space (not clipped:
+  # the weights use the exact proposal density)
   pts_01 <- tryCatch(
     qrng::sobol(n_sobol, d = d, randomize = "digital.shift"),
     error = function(e) NULL
@@ -151,18 +131,16 @@ sobol_scan_rb <- function(y, model_components, theta_names, phi_min, phi_max,
   if (is.null(pts_01)) return(list(prop_params = NULL, ess = 0, failed = TRUE))
   if (d == 1L) pts_01 <- matrix(pts_01, ncol = 1)
   theta_unc_mat <- matrix(stats::qlogis(pts_01), nrow = n_sobol, ncol = d)
-  # Drop the (measure-zero) points that land exactly on 0 or 1.
+  # Drop points exactly on 0 or 1
   theta_unc_mat <- theta_unc_mat[rowSums(!is.finite(theta_unc_mat)) == 0, , drop = FALSE]
   colnames(theta_unc_mat) <- theta_names
   n_pts <- nrow(theta_unc_mat)
   if (n_pts == 0L) return(list(prop_params = NULL, ess = 0, failed = TRUE))
 
-  # Transform to constrained space.
   trans         <- transform_unconstrained_to_theta(theta_unc_mat, theta_names,
                                                     phi_min, phi_max)
   theta_con_mat <- trans$theta
 
-  # Build design matrices — single C++ batch call for all n_pts candidates.
   design <- tryCatch(
     build_design_and_c_batch(
       yR = y_vec, trend = trend, seas = seas,
@@ -172,7 +150,6 @@ sobol_scan_rb <- function(y, model_components, theta_names, phi_min, phi_max,
   )
   if (is.null(design)) return(list(prop_params = NULL, ess = 0, failed = TRUE))
 
-  # Marginal likelihood evaluation — same C++ call as a single AIS-RB iteration.
   ml_res <- tryCatch(
     marginal_likelihood_rb(
       XtX_cube = design$XtX, Xty_mat = design$Xty, yty_vec = design$yty,
@@ -186,10 +163,8 @@ sobol_scan_rb <- function(y, model_components, theta_names, phi_min, phi_max,
   log_ml <- as.numeric(ml_res$log_marginal_lik)
   log_ml[!is.finite(log_ml)] <- -Inf
 
-  # IS weights w.r.t. Lebesgue measure on theta, as in the AIS loop:
-  #   w_i = p(y|θ_i) * p(θ_i) / q(θ_i),   q(θ) = q_z(z) / |dθ/dz|,
-  # with q_z the product of Logistic(0,1) densities and log|dθ/dz| = log_jac.
-  # mean(w) is then an RQMC estimate of p(y), used by the AIS early exit.
+  # Importance weights p(y | \theta) p(\theta) / q(\theta), with the proposal
+  # density q(\theta) = q_z(z) / |d\theta / dz|
   log_q_unc <- rowSums(stats::dlogis(theta_unc_mat, log = TRUE))
   log_w <- log_ml + log_prior_theta_const + trans$log_jac - log_q_unc
   log_w[!is.finite(log_w)] <- -Inf
@@ -205,7 +180,7 @@ sobol_scan_rb <- function(y, model_components, theta_names, phi_min, phi_max,
   ess <- 1 / sum(w^2)
   if (!is.finite(ess)) ess <- 0
 
-  # IS-weighted theta proposal — analogous to one AIS adaptive update step.
+  # Weighted mean and covariance, as proposal for AIS
   wp <- sobol_weighted_theta_params(theta_unc_mat, w)
   names(wp$mu)                         <- theta_names
   rownames(wp$Sigma) <- colnames(wp$Sigma) <- theta_names
@@ -224,22 +199,22 @@ sobol_scan_rb <- function(y, model_components, theta_names, phi_min, phi_max,
   )
 }
 
-# Random-search single-component joint proposal initialization for AIS.
-# "random_search_mean": best single Sobol candidate → mean; heuristic covariance.
-# "random_search":      IS-weighted mean *and* covariance from all Sobol candidates,
+################################################################################
+# FORECASTS AND PRIOR
+
+# Simulated future trajectories of an ETS model, one per row of params (with
+# the final states and \sigma^2 of the same posterior draw)
 ets_future_traj <- function(model_components, states, params, sigma2s, h = 10, seed = NULL) {
 
-  # Set seed for reproducibility if provided
   if (!is.null(seed)) set.seed(seed)
 
-  # Model components
   trend <- (model_components[[2]] == "A")
   seas <- (model_components[[3]] == "A")
   damped <- (model_components[[4]] == "TRUE")
 
   N_samples <- nrow(params)
 
-  # infer m from the provided states
+  # Seasonal period from the names of the states
   s_cols <- grep("^s\\d+$", colnames(states), value = TRUE)
   if (length(s_cols) > 1) {
     s_idx <- as.integer(sub("^s", "", s_cols))
@@ -248,7 +223,6 @@ ets_future_traj <- function(model_components, states, params, sigma2s, h = 10, s
   m <- if (seas) length(s_cols) else 1
   if (seas && m == 0) stop("Seasonal model but no seasonal states found.")
 
-  # Extract parameters (already in matrix form)
   alpha <- params[, "alpha"]
   if (trend) {
     beta <- params[, "beta"]
@@ -256,25 +230,21 @@ ets_future_traj <- function(model_components, states, params, sigma2s, h = 10, s
   }
   if (seas) gamma <- params[, "gamma"]
 
-  # Initialize states from the RSS_vect output
   l <- states[, "l"]
   if (trend) b <- states[, "b"]
   if (seas)  s <- states[, s_cols, drop = FALSE]
 
-  # Sample forecast errors for all horizons (each sample has its own variance)
+  # Errors for all horizons (one variance per draw)
   errors <- matrix(stats::rnorm(N_samples * h), nrow = N_samples, ncol = h) * sqrt(sigma2s)
 
-  # Initialize forecast matrix and compute forecasts
   forecasts <- matrix(nrow = N_samples, ncol = h)
   for (i in 1:h) {
-    # Compute point forecast for period i
     forecasts[, i] <- l
     if (trend) forecasts[, i] <- forecasts[, i] + phi * b
     if (seas)  forecasts[, i] <- forecasts[, i] + s[, ((i - 1) %% m) + 1]
-    # Add forecast error
     forecasts[, i] <- forecasts[, i] + errors[, i]
 
-    # Update states for next period using the realized value (trajectory with errors)
+    # State update
     l <- l + alpha * errors[, i]
     if (trend) {
       l <- l + phi * b
@@ -288,25 +258,23 @@ ets_future_traj <- function(model_components, states, params, sigma2s, h = 10, s
   forecasts
 }
 
+# Log-density of the uniform prior of the smoothing parameters (constant)
 log_prior_theta_uniform <- function(theta_samp, phi_min, phi_max) {
-  # Initialize with 0 (log density of 1)
   lp <- rep(0, nrow(theta_samp))
 
-  # 1. Beta and Gamma Normalization (Joint Uniform)
+  # (alpha, beta, gamma): uniform on a region of volume 1/6 (AAA) or 1/2
+  # (AAN, ANA)
   has_beta  <- "beta" %in% colnames(theta_samp)
   has_gamma <- "gamma" %in% colnames(theta_samp)
 
   if (has_beta && has_gamma) {
-    # ETS(A,A,A): Valid volume is 1/6. To integrate to 1, density must be 6.
     lp <- lp + log(6)
   } else if (has_beta || has_gamma) {
-    # ETS(A,A,N) or ETS(A,N,A): Valid area is 1/2. Density must be 2.
     lp <- lp + log(2)
   }
 
-  # 2. Phi Normalization (Independent Uniform)
+  # phi: uniform on (phi_min, phi_max)
   if ("phi" %in% colnames(theta_samp)) {
-    # Density is 1 / (max - min)
     lp <- lp - log(phi_max - phi_min)
   }
 

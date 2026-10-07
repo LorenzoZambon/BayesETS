@@ -1,17 +1,15 @@
 #' Predict from a BETS model
 #'
-#' Produces forecast distributions from a fitted `bets` object using
-#' Monte Carlo trajectories.
+#' Forecast distribution of a fitted `bets` object, from simulated
+#' trajectories.
 #'
 #' @param object A fitted object from [bets()].
-#' @param newdata Not used. Passing anything other than `NULL` raises an error,
-#'   since BETS forecasts forward from the end of the training series.
+#' @param newdata Not supported: must be `NULL`.
 #' @param h Forecast horizon.
-#' @param level Confidence levels for intervals.
-#' @param n_traj Number of simulated trajectories (default 1000). The Monte
-#'   Carlo error of the interval bounds decreases as `1 / sqrt(n_traj)`: with
-#'   the default it is about 2% of the width of the 95% interval, and 4 times
-#'   more trajectories halve it (the cost grows linearly with `n_traj * h`).
+#' @param level Levels of the prediction intervals.
+#' @param n_traj Number of simulated trajectories (default 1000). With the
+#'   default, the Monte Carlo error of the interval bounds is about 2% of the
+#'   width of the 95% interval; it decreases as `1 / sqrt(n_traj)`.
 #' @param ... Unused.
 #'
 #' @return An object of class `bets_forecast`.
@@ -48,7 +46,7 @@ predict.bets <- function(object, newdata = NULL, h = 10, level = c(80, 95),
 
   x       <- object$y
   tspx    <- stats::tsp(x)
-  deltat  <- 1 / tspx[3]          # tspx[3] is frequency; time step = 1/frequency
+  deltat  <- 1 / tspx[3]          # time step
   start_fc <- tspx[2] + deltat
 
   mean_ts  <- stats::ts(mean_fc, start = start_fc, frequency = stats::frequency(x))

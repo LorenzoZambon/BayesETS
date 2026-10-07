@@ -1,9 +1,6 @@
-# Resolve a dimension-indexed control parameter.
-# param may be:
-#   - a scalar  → used for all theta dimensions
-#   - an unnamed vector → param[min(d, length)] (last value repeated for d > length)
-#   - a named vector with names "1","2","3","4" → look up by d
-# Always returns a single integer.
+# Value of a control parameter for d smoothing parameters: a scalar applies to
+# all d; from a vector, the element named d or else element d (the last one if
+# the vector is shorter)
 resolve_by_d <- function(param, d) {
   if (length(param) == 1L) return(as.integer(param))
   if (!is.null(names(param))) {
@@ -14,21 +11,9 @@ resolve_by_d <- function(param, d) {
   as.integer(param[[idx]])
 }
 
+# Default control parameters. N_draw, N_final and n_quad have one value per
+# number d = 1, ..., 4 of smoothing parameters (see resolve_by_d()).
 bets_control_defaults <- function(freq = 1) {
-  # N_draw and N_final are dimension-indexed vectors (index = theta dim d = 1..4).
-  # Rule: N_draw = 128 * 2^(d-1). N_final (posterior draws kept per model) keeps
-  # their share of the forecast-interval error at about 1% of the 95% interval
-  # width for every d (well below the noise of the default 1000 trajectories).
-  # Pass a scalar to override uniformly; pass a length-4 vector for per-d control.
-  # Both are resolved to a scalar inside each sampler via resolve_by_d(param, d).
-  # integration = "auto" uses quadrature for d <= 2 and AIS for d >= 3.
-  # AIS (adaptive_is_rb) draws N_draw points per iteration from a Student-t
-  # proposal with is_df degrees of freedom and scale is_scale * H^{-1}, and stops
-  # once ESS >= min_ess (NULL -> N_draw / 4). n_quad = Gauss-Hermite nodes per
-  # dimension for quadrature_rb, also indexed by d, so the grid has n_quad[d]^d
-  # nodes (21, 441, 729, 2401). is_scale and n_quad[1:2] were tuned on M3 and
-  # tourism series (2026-10). The combination (BMA/stacking) and verbose are
-  # explicit arguments of bets().
   list(
     N_iter_max = 30,
     N_draw     = c(128L, 256L, 512L, 1024L),
@@ -49,6 +34,7 @@ bets_control_defaults <- function(freq = 1) {
   )
 }
 
+# Checks control and fills in the defaults
 resolve_bets_control <- function(control = list(), freq = 1) {
   if (!is.list(control) || (length(control) > 0 &&
                             (is.null(names(control)) || any(names(control) == "")))) {
@@ -62,7 +48,7 @@ resolve_bets_control <- function(control = list(), freq = 1) {
   }
 
   ctrl <- utils::modifyList(defaults, control)
-  # The prior mean of sigma^2, psi0 / (nu0 - 2), must exist (see init_rb_prior())
+  # nu0 > 2, so that the prior mean of \sigma^2 exists
   if (!is.numeric(ctrl$nu0) || length(ctrl$nu0) != 1 || !(ctrl$nu0 > 2)) {
     stop("control$nu0 must be a single number greater than 2")
   }
@@ -70,8 +56,7 @@ resolve_bets_control <- function(control = list(), freq = 1) {
 }
 
 # Error message for unknown control entries: suggests the closest valid name
-# when it is a likely typo (edit distance at most 2, or a third of the name),
-# and lists all valid names.
+# for likely typos, and lists the valid names
 unknown_control_message <- function(unknown, valid) {
   lines <- vapply(unknown, function(u) {
     d <- utils::adist(u, valid, ignore.case = TRUE)[1, ]
@@ -84,11 +69,8 @@ unknown_control_message <- function(unknown, valid) {
   paste(c(lines, paste("Valid entries:", paste(valid, collapse = ", "))), collapse = "\n")
 }
 
-# Seasonal period of y, with the rules of forecast::ets(): a frequency below 1
-# (e.g. decennial data) counts as 1 (here with a warning), and a non-integer
-# frequency (e.g. 52.18 for weekly data) allows non-seasonal models only.
-# Rounding it instead would make the seasonal pattern drift by a fraction of a
-# period every cycle.
+# Seasonal period of y, with the rules of forecast::ets(). A non-integer
+# frequency gives period 1: rounding it would make the seasonal pattern drift.
 seasonal_period <- function(y) {
   if (stats::frequency(y) < 1) {
     warning("Frequency below 1 is treated as 1. Only non-seasonal models will be considered.",
@@ -104,6 +86,7 @@ seasonal_period <- function(y) {
   as.integer(round(m))
 }
 
+# Models of "ZZZ" for seasonal period m
 bets_model_space <- function(m) {
   if (m > 1) {
     list(
@@ -123,9 +106,9 @@ bets_model_space <- function(m) {
   }
 }
 
-# m is the seasonal period (see seasonal_period()) and n the length of the
-# series.  As in forecast::ets(), seasonal models need 1 < m <= 24 and n > m:
-# requesting one otherwise is an error, while "ZZZ" just leaves them out.
+# Converts the model specification into a list of (error, trend, season,
+# damped) vectors. m: seasonal period, n: length of the series. As in
+# forecast::ets(), seasonal models need 1 < m <= 24 and n > m.
 coerce_model_components <- function(model, m, additive.only = TRUE, n = Inf) {
   if (!is.logical(additive.only) || length(additive.only) != 1 || is.na(additive.only)) {
     stop("additive.only must be TRUE or FALSE")

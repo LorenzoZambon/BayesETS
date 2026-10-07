@@ -2,17 +2,18 @@
 % Please edit documentation in R/helpers.R
 \name{compute_stacking_weights}
 \alias{compute_stacking_weights}
-\title{Compute Stacking Weights}
+\title{Stacking weights}
 \usage{
 compute_stacking_weights(log_lik_list)
 }
 \arguments{
-\item{log_lik_list}{A list of matrices containing pointwise log-likelihoods for each model.}
+\item{log_lik_list}{List with one matrix of pointwise log-likelihoods
+(draws x time) per model.}
 }
 \value{
-A vector of stacking weights.
+Vector of stacking weights.
 }
 \description{
-Compute Stacking Weights
+Stacking weights
 }
 \keyword{internal}

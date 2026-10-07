@@ -9,17 +9,15 @@
 \arguments{
 \item{object}{A fitted object from \code{\link[=bets]{bets()}}.}
 
-\item{newdata}{Not used. Passing anything other than \code{NULL} raises an error,
-since BETS forecasts forward from the end of the training series.}
+\item{newdata}{Not supported: must be \code{NULL}.}
 
 \item{h}{Forecast horizon.}
 
-\item{level}{Confidence levels for intervals.}
+\item{level}{Levels of the prediction intervals.}
 
-\item{n_traj}{Number of simulated trajectories (default 1000). The Monte
-Carlo error of the interval bounds decreases as \code{1 / sqrt(n_traj)}: with
-the default it is about 2\% of the width of the 95\% interval, and 4 times
-more trajectories halve it (the cost grows linearly with \code{n_traj * h}).}
+\item{n_traj}{Number of simulated trajectories (default 1000). With the
+default, the Monte Carlo error of the interval bounds is about 2\% of the
+width of the 95\% interval; it decreases as \code{1 / sqrt(n_traj)}.}
 
 \item{...}{Unused.}
 }
@@ -27,6 +25,6 @@ more trajectories halve it (the cost grows linearly with \code{n_traj * h}).}
 An object of class \code{bets_forecast}.
 }
 \description{
-Produces forecast distributions from a fitted \code{bets} object using
-Monte Carlo trajectories.
+Forecast distribution of a fitted \code{bets} object, from simulated
+trajectories.
 }

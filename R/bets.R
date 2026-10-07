@@ -1,94 +1,88 @@
 #' Fit a Bayesian ETS model
 #'
-#' Estimates multiple ETS variants by drawing samples from the posterior distribution
-#' of the parameters, using adaptive Gauss-Hermite quadrature or adaptive
-#' importance sampling (AIS).
-#' The resulting model fits are then combined into a single predictive distribution,
-#' either by Bayesian Model Averaging (BMA) or stacking.
-#' Currently only additive-error models are supported (i.e. `additive.only = TRUE`).
+#' Fits several ETS models and combines them into a single predictive
+#' distribution, by Bayesian Model Averaging (BMA) or stacking.
+#' The smoothing parameters are integrated by adaptive Gauss-Hermite quadrature
+#' or adaptive importance sampling (AIS); the initial states and the error
+#' variance are integrated analytically.
+#' Currently only additive-error models are supported.
 #'
 #' @param y Univariate time series.
-#' @param model Model space. Use `"ZZZ"` (default) to search a predefined set,
-#'   or pass a specific model specification (e.g., "AAdN").
-#' @param combination How the model fits are combined: `"bma"` (Bayesian Model
-#'   Averaging, default) or `"stacking"`.
-#' @param additive.only Logical; if `TRUE` (default), only additive-error models are considered.
-#' Currently, setting `additive.only = FALSE` will result in an error.
+#' @param model Model space: `"ZZZ"` (default) for a predefined set of models,
+#'   or a model specification (e.g. `"AAdN"`), or a list of them.
+#' @param combination How the models are combined: `"bma"` (default) or
+#'   `"stacking"`.
+#' @param additive.only Logical; only `TRUE` (default) is currently supported.
 #' @param verbose `0` (default) prints nothing, `1` prints the model weights,
-#'   `2` also prints the progress of each model fit. `TRUE`/`FALSE` are
-#'   accepted as `1`/`0`.
-#' @param control Named list of tuning parameters. Missing values are filled from
-#'   package defaults. See **Details**.
+#'   `2` also prints the progress of each fit. `TRUE`/`FALSE` are accepted as
+#'   `1`/`0`.
+#' @param control Named list of tuning parameters, see **Details**. Missing
+#'   entries take their default values.
 #'
 #' @details
 #' ## Integration methods
 #'
-#' The smoothing parameters of each model are integrated out either by adaptive
-#' Gauss-Hermite quadrature or by adaptive importance sampling (AIS). Both start
-#' from the posterior mode of the unconstrained smoothing parameters and the
-#' inverse Hessian there. Quadrature integrates on a Gauss-Hermite grid scaled
-#' by the inverse Hessian. AIS draws from a Student-t proposal centred at the
-#' mode, sampled with randomised Sobol points, and adapts it only while the
-#' effective sample size is below `min_ess` (usually a single step suffices).
-#' Initial states and error variance are integrated out analytically in both
-#' cases. By default (`integration = "auto"` in `control`), quadrature is used
+#' Both methods start from the posterior mode of the (unconstrained) smoothing
+#' parameters and the inverse Hessian there. Quadrature uses a Gauss-Hermite
+#' grid scaled by the inverse Hessian. AIS samples a Student-t proposal with
+#' randomised Sobol points, and adapts it until the effective sample size
+#' reaches `min_ess`. By default (`integration = "auto"`), quadrature is used
 #' for models with up to 2 smoothing parameters (ANN, AAN, ANA) and AIS for
-#' models with 3 or 4 (AAdN, AAA, AAdA), where quadrature is less accurate.
+#' the others (AAdN, AAA, AAdA).
 #'
 #' ## Seasonal period
 #'
-#' The seasonal period is `frequency(y)`, with the same rules as
-#' `forecast::ets()`: a frequency below 1 (e.g. decennial data) counts as 1,
-#' and a non-integer frequency (e.g. 52.18 for weekly data) allows
-#' non-seasonal models only; both cases give a warning. Seasonal models also require a
-#' period of at most 24 and more than one full period of data. With
-#' `model = "ZZZ"`, seasonal models are left out when these conditions do not
-#' hold (with a warning for a period above 24); requesting a seasonal model
-#' explicitly is then an error. Forecasts keep the time index of `y`.
+#' The seasonal period is `frequency(y)`, with the rules of `forecast::ets()`:
+#' a frequency below 1 counts as 1, and a non-integer frequency (e.g. weekly
+#' data) allows only non-seasonal models, both with a warning. Seasonal models
+#' also require a period of at most 24 and more than one full period of data.
+#' With `model = "ZZZ"`, seasonal models are dropped when these conditions do
+#' not hold; requesting one explicitly is an error.
 #'
 #' ## Constant series
 #'
-#' A constant series is fitted with ETS(A,N,N) whatever `model` is, with a
-#' warning: the forecasts equal the constant, and since the data show no
-#' variability the width of the intervals comes from the prior of the error
-#' variance. Its default scale is `psi0 = (0.2 * |level|)^2` (`0.2^2` for a
-#' series of zeros); the intervals narrow as the series gets longer and widen
-#' with the horizon. Set `psi0` in `control` to choose the scale.
+#' A constant series is fitted with ETS(A,N,N), with a warning. The forecasts
+#' are constant, and the width of the intervals depends on the prior of the
+#' error variance (set by a heuristic, or by `psi0` in `control`).
 #'
 #' ## Control parameters
 #'
-#' The `control` argument accepts a named list with the following entries: (TODO)
+#' The `control` argument accepts a named list with the following entries.
+#' Entries indexed by `d` have one value per number of smoothing parameters
+#' (`d` = 1, ..., 4); a scalar applies to all `d`.
 #'
-#' - `prior_models`: optional prior model probabilities for BMA, passed as a
-#' list (...). Default: equal weights.
-#' - `nu0`, `psi0`: prior of the error variance, a scaled inverse chi-squared
-#'   with `nu0` degrees of freedom (default 3, must be greater than 2) and
-#'   prior mean `psi0 / (nu0 - 2)`. The default `psi0 = NULL` uses the
-#'   residual variance of the naive forecast or, if smaller, of the seasonal
-#'   naive one. The prior covariance of the initial states is proportional to
-#'   the error variance, and equals a data-based heuristic at its prior mean.
-#' - `integration`: `"auto"` (default, see above), `"quadrature"` or `"ais"`,
-#'   to force one method for all models. Forcing quadrature is not recommended
-#'   for models with 3 or more smoothing parameters: its error grows with the
-#'   dimension and can be large for strongly non-Gaussian posteriors.
-#' - `N_draw`: Number of AIS draws per iteration, indexed by the number `d` of
-#'   smoothing parameters (1 to 4). Default `c(128, 256, 512, 1024)`; a scalar
-#'   applies to all `d`. Powers of 2 are optimal for Sobol sequences.
-#' - `min_ess`: AIS stops as soon as the effective sample size of all draws so
-#'   far reaches `min_ess`. Default `NULL` resolves to `N_draw / 4`. Models that
-#'   do not reach it within `N_iter_max` iterations (default 30) get zero weight;
-#'   if all models do, `bets()` stops with an error.
-#' - `N_final`: Number of posterior draws kept per model (used by [predict.bets()]),
-#'   indexed by `d` like `N_draw`. Default `c(100, 300, 500, 500)`.
-#' - `is_df`, `is_scale`: Degrees of freedom of the Student-t proposal of AIS
-#'   (default 5) and inflation of its initial scale matrix relative to the
-#'   inverse Hessian (default 4).
-#' - `n_scan`: Number of points of the prior scan (randomised Sobol points,
-#'   evaluated in one batch) whose best point starts the search for the
-#'   posterior mode, for both methods. Default 64.
-#' - `n_quad`: Number of Gauss-Hermite nodes per dimension for quadrature,
-#'   indexed by `d` like `N_draw`; the grid has `n_quad[d]^d` nodes. Default
-#'   `c(21, 21, 9, 7)`.
+#' Integration:
+#' - `integration`: `"auto"` (default), `"quadrature"` or `"ais"`, to use one
+#'   method for all models. Quadrature is not recommended for models with 3 or
+#'   more smoothing parameters.
+#' - `n_scan`: number of prior points evaluated to start the search of the
+#'   posterior mode. Default 64.
+#' - `N_draw`: number of AIS draws per iteration, indexed by `d`. Default
+#'   `c(128, 256, 512, 1024)`. Powers of 2 work best with Sobol points.
+#' - `min_ess`, `N_iter_max`: AIS stops when the effective sample size reaches
+#'   `min_ess` (default `N_draw / 4`), or after `N_iter_max` iterations
+#'   (default 30). In the second case the model gets zero weight; if all
+#'   models do, `bets()` stops with an error.
+#' - `is_df`, `is_scale`: degrees of freedom (default 5) and scale inflation
+#'   (default 4) of the AIS proposal.
+#' - `lr`: maximum weight of the new estimates when the AIS proposal is
+#'   updated (default 0.9).
+#' - `n_quad`: number of Gauss-Hermite nodes per dimension, indexed by `d`.
+#'   Default `c(21, 21, 9, 7)`.
+#' - `N_final`: number of posterior draws kept per model, used by
+#'   [predict.bets()], indexed by `d`. Default `c(200, 300, 500, 500)`.
+#'
+#' Priors:
+#' - `nu0`, `psi0`: prior of the error variance \eqn{\sigma^2}, a scaled
+#'   inverse chi-squared with `nu0` degrees of freedom (default 3, must be
+#'   greater than 2) and mean `psi0 / (nu0 - 2)`. By default, `psi0` is the
+#'   residual variance of the naive or seasonal naive forecasts.
+#' - `c_inflate_eta`: inflation factor of the prior covariance of the initial
+#'   states, which is set by a heuristic (default 3).
+#' - `phi_min`, `phi_max`: range of the damping parameter (default 0.8 and
+#'   0.98). All smoothing parameters have uniform priors.
+#' - `prior_models`: prior model probabilities for BMA, one per model.
+#'   Default: equal.
 #'
 #' @return An object of class `"bets"`.
 #' @export
@@ -122,9 +116,8 @@ bets <- function(y,
   integration <- match.arg(ctrl$integration, c("auto", "quadrature", "ais"))
   model_components <- coerce_model_components(model, m, additive.only, n = length(y))
 
-  # The models are fitted on a copy of y whose frequency is the seasonal period
-  # (1 if seasonal models cannot be fitted), so that the prior heuristics only
-  # see integer periods; y keeps its time index for predict().
+  # Fit on a copy of y with frequency = seasonal period (1 if no seasonal model
+  # can be fitted); y keeps its time index for predict()
   if (m > 24 || length(y) <= m) m <- 1L
   y_fit <- stats::ts(as.numeric(y), frequency = m)
 

@@ -14,10 +14,8 @@ gaussian_log_g <- function(mu, S, log_c) {
 }
 
 test_that("AIS recovers the normalising constant of a Gaussian (d = 1..4)", {
-  # RQMC error with 1024 draws: at most 0.008 over 20 seeds for d = 4.  With
-  # the default scale (4 x inverse Hessian) the first step on an exactly
-  # Gaussian target falls just short of min_ess = N/4 at d = 4, so one
-  # adaptation step is allowed.
+  # Error with 1024 draws: at most 0.008 over 20 seeds for d = 4 (where one
+  # adaptation step can be needed)
   set.seed(11)
   log_c <- -123.456
   for (d in 1:4) {
@@ -34,9 +32,8 @@ test_that("AIS recovers the normalising constant of a Gaussian (d = 1..4)", {
 })
 
 test_that("AIS adapts and pools draws until min_ess is reached", {
-  # Skewed target (Gumbel x logistic): one step of 256 draws has ESS of about
-  # 130, below min_ess = 0.9 * 256, so a second iteration is needed; the
-  # pooled estimate must stay unbiased.
+  # Skewed target: the first step has ESS ~ 130 < min_ess, so a second
+  # iteration is needed
   log_c <- -50
   skew_log_g <- function(Z) {
     list(log_g = log_c - (Z[, 1] + exp(-Z[, 1])) + stats::dlogis(Z[, 2], log = TRUE))

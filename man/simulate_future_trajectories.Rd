@@ -2,21 +2,21 @@
 % Please edit documentation in R/helpers.R
 \name{simulate_future_trajectories}
 \alias{simulate_future_trajectories}
-\title{Simulate Future Trajectories for an ETS model}
+\title{Future trajectories of the model combination}
 \usage{
 simulate_future_trajectories(bets_fit, h = 10, n_traj = 1000)
 }
 \arguments{
-\item{bets_fit}{A BETS fit object.}
+\item{bets_fit}{The \code{fit} element of a \code{bets} object.}
 
-\item{h}{The forecast horizon.}
+\item{h}{Forecast horizon.}
 
-\item{n_traj}{The number of trajectories to simulate.}
+\item{n_traj}{Number of trajectories.}
 }
 \value{
-A matrix of future trajectories.
+Matrix of trajectories (n_traj x h).
 }
 \description{
-Simulate Future Trajectories for an ETS model
+Each model contributes a number of trajectories proportional to its weight.
 }
 \keyword{internal}

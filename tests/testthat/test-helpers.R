@@ -27,7 +27,7 @@ test_that("ets_label() returns 'ANA' for seasonal-only model", {
 })
 
 # ---------------------------------------------------------------------------
-# compute_stacking_weights() — validation
+# compute_stacking_weights(): validation
 # ---------------------------------------------------------------------------
 
 test_that("compute_stacking_weights() errors on empty list", {
@@ -52,7 +52,7 @@ test_that("compute_stacking_weights() errors on mismatched column counts", {
 })
 
 # ---------------------------------------------------------------------------
-# compute_stacking_weights() — correctness
+# compute_stacking_weights(): correctness
 # ---------------------------------------------------------------------------
 
 test_that("compute_stacking_weights() returns weights summing to 1", {

@@ -80,8 +80,7 @@ ais_reference <- function(s) {
 # ---------------------------------------------------------------------------
 
 test_that("quadrature agrees with AIS where it is the default (d <= 2)", {
-  # integration = "auto" uses quadrature only for d <= 2; at d = 3-4 its
-  # downward bias (~0.05 on some monthly series) is why AIS is used there.
+  # "auto" uses quadrature only for d <= 2 (biased for d >= 3)
   skip_on_cran()
   for (s in agreement_series) {
     mc <- BETS:::coerce_model_components(s$code, stats::frequency(s$y))[[1]]
@@ -97,8 +96,7 @@ test_that("quadrature agrees with AIS where it is the default (d <= 2)", {
 })
 
 test_that("default AIS agrees with the reference on log evidence and posterior mean of alpha", {
-  # AIS is random: check its typical precision, i.e. the median difference
-  # over 3 seeds (single runs at d >= 3 occasionally reach ~0.05).
+  # AIS is random: median difference over 3 seeds
   skip_on_cran()
   for (s in agreement_series) {
     res_ref <- ais_reference(s)
@@ -157,10 +155,8 @@ test_that("80% and 95% forecast quantiles agree with the reference within Monte 
       q_fit <- rbind(as.numeric(fc$lower[, "95"]), as.numeric(fc$lower[, "80"]),
                      as.numeric(fc$upper[, "80"]), as.numeric(fc$upper[, "95"]))
 
-      # Probability level of each quantile under the AIS predictive sample,
-      # standardised by the binomial error of two samples of n_traj.
-      # Calibration: AIS against AIS (different seeds) gives rms(z) 0.8-1.3 and
-      # max|z| < 4; intervals 5% too wide give rms(z) > 2.4.
+      # Level of each quantile under the AIS predictive, standardised by the
+      # binomial error (AIS vs AIS: rms(z) 0.8-1.3, max|z| < 4)
       F_ais <- vapply(seq_len(h), function(j) colMeans(outer(traj_ais[, j], q_fit[, j], "<=")),
                       numeric(length(probs)))
       z <- (F_ais - probs) / sqrt(2 * probs * (1 - probs) / n_traj)

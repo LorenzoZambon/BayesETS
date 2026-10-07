@@ -6,7 +6,7 @@
 \alias{BETS-package}
 \title{BETS package}
 \description{
-Bayesian ETS models with adaptive importance sampling.
+Bayesian ETS models.
 }
 \author{
 \strong{Maintainer}: Lorenzo Zambon \email{lorenzo.zambon@supsi.ch}

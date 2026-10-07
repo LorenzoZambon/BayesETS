@@ -1,6 +1,6 @@
 #' BETS package
 #'
-#' Bayesian ETS models with adaptive importance sampling.
+#' Bayesian ETS models.
 #'
 #' @keywords internal
 #' @importFrom Rcpp evalCpp
@@ -10,9 +10,10 @@
 #' @useDynLib BETS, .registration = TRUE
 "_PACKAGE"
 
-##############################################################################
-### Model Fitting Wrapper ###
+################################################################################
+# MODEL FITTING
 
+# Fits each model and combines them (BMA or stacking)
 fit_bets_models <- function(y,
                             model_components,
                             ctrl,
@@ -35,12 +36,8 @@ fit_bets_models <- function(y,
     ctrl$psi0 <- psi0
   }
 
-  # Centre the series at its initial level (the prior mean of l0, see
-  # init_eta_params(): mean of the first frequency observations, at least one,
-  # since the frequency can be < 1, e.g. decennial data).  The additive model
-  # is location-equivariant: only the level states shift, so the evidence and
-  # theta posterior are unchanged, while the sufficient statistics of the C++
-  # kernels stay small.
+  # Centre the series at its initial level: only the level states change,
+  # and the C++ kernels work with smaller numbers
   y_shift <- mean(y[seq_len(max(1L, min(as.integer(freq), length(y))))])
   y_centred <- y - y_shift
 
@@ -63,7 +60,7 @@ fit_bets_models <- function(y,
       ctrl = ctrl,
       return_pointwise = need_pointwise
     )
-    # Back to the original location (NULL if the model failed)
+    # Undo the centring (NULL for failed models)
     if (!is.null(res_i$etas)) {
       res_i$etas[, "l"]   <- res_i$etas[, "l"] + y_shift
       res_i$states[, "l"] <- res_i$states[, "l"] + y_shift
@@ -112,15 +109,9 @@ fit_bets_models <- function(y,
   )
 }
 
-# Fit of a constant series.  Its residuals are zero for every model and every
-# smoothing parameter, which the integrators reject as lost precision, but the
-# posterior under ETS(A,N,N) is available directly: the likelihood is flat in
-# alpha, which keeps its uniform prior; the final level is the constant; and
-# sigma^2 | y ~ Inv-Gamma((nu0 + L) / 2, psi0 / 2), as the residuals add
-# nothing to the prior scale.  psi0 cannot be estimated from the data, so by
-# default it is set relative to the level: (0.2 * |level|)^2, or 0.2^2 for a
-# series of zeros.  The intervals then shrink as the number of observations
-# grows and widen with the horizon.
+# Fit of a constant series with ETS(A,N,N). The integrators cannot be used (all
+# residuals are zero), but the posterior is simple: alpha keeps its prior, the
+# final level is the constant and \sigma^2 is driven by its prior only.
 fit_constant_series <- function(y, ctrl, combination) {
   level <- as.numeric(y[1])
   psi0 <- ctrl$psi0
@@ -138,13 +129,9 @@ fit_constant_series <- function(y, ctrl, combination) {
        fit_time_per_model = 0, elapsed_combination = 0)
 }
 
-# Default psi0, the scale of the sigma^2 prior (prior mean psi0 / (nu0 - 2))
-# and hence of the initial-state prior (see init_rb_prior()): the residual
-# variance of the naive forecast or, if smaller, of the seasonal naive one.
-# Variances rather than MSEs, so that a drift does not inflate it, and the
-# smaller of the two because the other also contains the seasonal swings
-# (naive) or several periods of level changes (seasonal naive).  The floor
-# keeps it positive for deterministic series, e.g. a straight line.
+# Default psi0: variance of the naive or, if smaller, of the seasonal naive
+# residuals (variance rather than MSE, to ignore drift). Floored to stay
+# positive for deterministic series.
 default_psi0 <- function(y) {
   m <- stats::frequency(y)
   psi0 <- stats::var(diff(y))
@@ -152,9 +139,8 @@ default_psi0 <- function(y) {
   max(psi0, 1e-8 * stats::var(y))
 }
 
-# Integration method for one model: "auto" uses quadrature for up to 2
-# smoothing parameters (most accurate and cheapest there) and AIS for 3-4
-# (quadrature has a downward bias there that grows with the dimension).
+# Integration method of a model: with "auto", quadrature for up to 2 smoothing
+# parameters, AIS otherwise
 resolve_integration <- function(integration, model_components) {
   if (integration != "auto") return(integration)
   trend  <- (model_components[[2]] == "A")

@@ -1,22 +1,17 @@
-##############################################################################
-### Rao-Blackwellized Adaptive Importance Sampling ###
-###
-### Samples only theta, analytically integrating out eta (initial states)
-### and sigma^2 using conjugate Normal-Inverse-Chi-Squared priors.
-###
-### The first proposal is a multivariate Student-t centred at the mode of the
-### integrand in the unconstrained coordinates z and scaled by its inverse
-### Hessian (the Laplace fit shared with quadrature_rb()), sampled with
-### randomised Sobol points.  It is adapted by weighted moment matching only
-### while the ESS is below min_ess; the draws of all iterations are pooled.
-##############################################################################
+################################################################################
+# ADAPTIVE IMPORTANCE SAMPLING (AIS)
+#
+# Samples the smoothing parameters only: the initial states and \sigma^2 are
+# integrated analytically (conjugate prior). The proposal is a Student-t at the
+# posterior mode, adapted while the ESS is below min_ess.
 
+# Fit of one model by AIS
 adaptive_is_rb <- function(y, model_components, ctrl,
                            return_pointwise = FALSE) {
   N_iter_max  <- ctrl$N_iter_max
-  N_draw_raw  <- ctrl$N_draw    # may be a scalar or length-4 vector; resolved per d below
-  N_final_raw <- ctrl$N_final   # same
-  min_ess_raw <- ctrl$min_ess   # NULL (-> N_draw[d] / 4) or scalar or vector
+  N_draw_raw  <- ctrl$N_draw
+  N_final_raw <- ctrl$N_final
+  min_ess_raw <- ctrl$min_ess   # NULL: N_draw / 4
   is_df       <- ctrl$is_df
   is_scale    <- ctrl$is_scale
   lr          <- ctrl$lr
@@ -30,16 +25,15 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   theta_names <- c("alpha", if (trend) c("beta", if (damped) "phi"), if (seas) "gamma")
   n_theta <- length(theta_names)
 
-  # Resolve dimension-dependent scalars now that d = n_theta is known.
+  # Values for d = n_theta
   N_draw  <- resolve_by_d(N_draw_raw,  n_theta)
   N_final <- resolve_by_d(N_final_raw, n_theta)
   min_ess <- if (is.null(min_ess_raw)) N_draw / 4 else resolve_by_d(min_ess_raw, n_theta)
 
-  # ---- Set up eta prior and the integrand ----
   prior <- init_rb_prior(y, model_components, theta_names, ctrl)
   log_g_rb <- make_log_g_rb(y, model_components, theta_names, ctrl, prior)
 
-  # ---- Adaptive importance sampling, starting the mode search at the best point of a prior scan ----
+  # AIS, with the mode search starting at the best point of a prior scan
   t0 <- proc.time()[3]
   scan <- prior_scan(log_g_rb, theta_names, ctrl$n_scan)
   t_scan <- proc.time()[3] - t0
@@ -54,8 +48,7 @@ adaptive_is_rb <- function(y, model_components, ctrl,
   names(prop_params$mus) <- theta_names
   rownames(prop_params$Sigma) <- colnames(prop_params$Sigma) <- theta_names
 
-  # Convergence check: if ESS did not reach the target, skip posterior
-  # reconstruction entirely — this model will receive zero weight in BMA/stacking.
+  # Target ESS not reached: the model gets zero weight
   if (ais$ess < min_ess) {
     warning(sprintf(paste0(
       "adaptive_is_rb: ESS = %.0f below min_ess = %.0f after %d iterations; ",
@@ -69,12 +62,12 @@ adaptive_is_rb <- function(y, model_components, ctrl,
       n_iter = ais$n_iter,
       prop_params = prop_params,
       log_evidence = -Inf,
-      log_lik_pointwise = if (return_pointwise) matrix(-1e300, nrow = N_final, ncol = L) else NULL,  # use -1e300 instead of -Inf to avoid NaN in logsumexp
+      log_lik_pointwise = if (return_pointwise) matrix(-1e300, nrow = N_final, ncol = L) else NULL,  # not -Inf: NaN in logsumexp
       timing = timing
     ))
   }
 
-  # ---- Posterior Reconstruction (from the draws of all iterations) ----
+  # Posterior draws, from the draws of all iterations
   t0 <- proc.time()[3]
   theta_particles <- do.call(rbind, lapply(ais$draw_evals, `[[`, "theta"))
   ml_res <- bind_ml_res(lapply(ais$draw_evals, `[[`, "ml_res"))
@@ -98,12 +91,11 @@ adaptive_is_rb <- function(y, model_components, ctrl,
 }
 
 
-##############################################################################
-### Shared Rao-Blackwell Helpers (used by adaptive_is_rb and quadrature_rb) ###
+################################################################################
+# PRIOR AND POSTERIOR DRAWS (shared with quadrature_rb())
 
-# Conjugate prior for the initial states eta and sigma^2, plus the constant
-# log-density of the uniform theta prior.  Returns eta0 and V0 already in the
-# C++ ordering expected by build_design_and_c_batch / marginal_likelihood_rb.
+# Prior of the initial states and \sigma^2, and log-density of the uniform
+# prior of the smoothing parameters. eta0 and V0 are in the C++ order.
 init_rb_prior <- function(y, model_components, theta_names, ctrl) {
   psi0          <- ctrl$psi0
   phi_min       <- ctrl$phi_min
@@ -115,15 +107,13 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
   seas <- (model_components[[3]] == "A")
   n_theta <- length(theta_names)
 
-  # Use the existing heuristic for the initial states
   eta_init <- init_eta_params(y, model_components)
-  eta_names_free <- names(eta_init$mus)  # l, [b,] [s1..s_{m-1}]
+  eta_names_free <- names(eta_init$mus)  # l, [b,] [s1, ..., s_{m-1}]
 
-  # For the RB formulation, eta includes the last seasonal state too
-  # eta = (l0, [b0,] [s1, ..., s_m])  -- 1-indexed; s_m is the sum-to-zero state
+  # eta also includes the last seasonal state: (l0, [b0,] [s1, ..., s_m])
   n_eta <- 1 + (if (trend) 1L else 0L) + (if (seas) m else 0L)
 
-  # Expand eta0 to include s_m = -sum(s1..s_{m-1})
+  # Prior mean of s_m: -(s1 + ... + s_{m-1})
   eta0_free <- eta_init$mus
   if (seas && m > 1) {
     s_free_names <- grep("^s\\d+$", names(eta0_free), value = TRUE)
@@ -134,45 +124,32 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
     eta0_r_order <- eta0_free
   }
 
-  # Build full prior covariance matching the heuristic: eta | sigma^2 ~
-  # N(eta0, sigma^2 V0) with V0 = Sigma_heuristic / E[sigma^2], where
-  # E[sigma^2] = psi0 / (nu0 - 2), so that the prior covariance of eta is
-  # Sigma_heuristic at the prior mean of sigma^2, whatever nu0.
+  # eta | \sigma^2 ~ N(eta0, \sigma^2 V0), with V0 = Sigma / E[\sigma^2]: prior
+  # covariance Sigma at the prior mean of \sigma^2
   Sigma_heuristic_free <- eta_init$Sigma * c_inflate_eta
   prior_mean_sigma2 <- psi0 / (ctrl$nu0 - 2)
 
-  # Expand to include the m-th seasonal slot, dropping the standard ETS
-  # sum-to-zero constraint s_1 + ... + s_m = 0.  The design matrix X does NOT
-  # enforce the constraint: the recursion is invariant under the joint shift
-  # (l_0, s_1, ..., s_m) -> (l_0 + c, s_1 - c, ..., s_m - c), so X'X has rank
-  # n_eta - 1.  We use a diagonal prior on all m slots; the prior regularizes
-  # the unidentified shift direction without changing the predictive
-  # distribution, and keeps V0 (and hence V0^{-1}) positive definite, which
-  # is required by the Woodbury-based marginal_likelihood_rb kernel.
-  # Encoding the constraint via off-diagonal coupling would make V0 exactly
-  # rank-deficient and break inv_sympd(V0).
+  # Independent priors on all m seasonal states, without the sum-to-zero
+  # constraint: the prior fixes the shift (l0 + c, s - c) that the data cannot
+  # identify, and keeps V0 invertible
   if (seas && m > 1) {
     n_free <- length(eta0_free)
     n_full <- n_eta
     s_indices_free <- grep("^s\\d+$", names(eta0_free))
     Sigma_full <- matrix(0, n_full, n_full)
     Sigma_full[1:n_free, 1:n_free] <- Sigma_heuristic_free
-    # Independent prior for the m-th seasonal slot, with the same marginal scale as the others
+    # s_m: same prior variance as the other seasonal states
     Sigma_full[n_full, n_full] <- mean(diag(Sigma_heuristic_free)[s_indices_free])
   } else {
     Sigma_full <- Sigma_heuristic_free
   }
 
-  # build_design_and_c_batch maps eta[s_offset + k] directly to times t ≡ k (mod m).
-  # Slot k=0 is used at t=0, m, 2m, … (oldest periodic factor = s_m in R naming).
-  # Slot k=m-1 is used at t=m-1, 2m-1, … (most-recent factor = s_1 in R naming).
-  # So the C++ ordering is: eta_cpp = (l, [b,] s_m, s_{m-1}, ..., s_1)
-  # We must reverse the seasonal block of eta0 and V0 before passing to C++.
+  # C++ order of the seasonal states: (s_m, ..., s1)
   if (seas && m > 1) {
-    s_offset_r <- (1 + (if (trend) 1L else 0L))  # 1-based offset to first seasonal in R order
+    s_offset_r <- (1 + (if (trend) 1L else 0L))  # number of non-seasonal states
     non_s_idx <- seq_len(s_offset_r)
-    s_idx_r <- (s_offset_r + 1):(s_offset_r + m)  # s1..s_m in R order
-    s_idx_cpp <- rev(s_idx_r)  # s_m, s_{m-1}, ..., s1
+    s_idx_r <- (s_offset_r + 1):(s_offset_r + m)  # s1, ..., s_m
+    s_idx_cpp <- rev(s_idx_r)                     # s_m, ..., s1
     reorder <- c(non_s_idx, s_idx_cpp)
 
     eta0_cpp <- as.numeric(eta0_r_order[reorder])
@@ -182,7 +159,7 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
     V0 <- Sigma_full / prior_mean_sigma2
   }
 
-  # Uniform theta prior on the admissible region: its log-density is constant.
+  # Uniform prior of the smoothing parameters: constant log-density
   dummy_theta <- matrix(0, nrow = 1, ncol = n_theta)
   colnames(dummy_theta) <- theta_names
   log_prior_theta_const <- log_prior_theta_uniform(dummy_theta, phi_min, phi_max)[1]
@@ -196,10 +173,9 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
   )
 }
 
-# Posterior reconstruction from weighted theta particles: resample N_final
-# particles with probabilities w, then draw sigma^2 and eta from their
-# conditional posteriors.  ml_res must come from marginal_likelihood_rb(...,
-# return_posterior = TRUE) evaluated at theta_particles (one column/slice per row).
+# Posterior draws: resampling of the weighted particles, then \sigma^2 and eta
+# from their conditional posteriors. ml_res: output of marginal_likelihood_rb()
+# at the particles.
 draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
                               N_final, nu0, return_pointwise = FALSE) {
   L <- length(y)
@@ -213,35 +189,30 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
   res_idx <- sample(N_particles, size = N_final, replace = TRUE, prob = w)
   thetas <- theta_particles[res_idx, , drop = FALSE]
 
-  # For each resampled theta, draw sigma^2 and then eta
   posterior_scale <- as.numeric(ml_res$posterior_scale)
   nu_n <- nu0 + L
 
   sigma2s <- posterior_scale[res_idx] / stats::rchisq(N_final, df = nu_n)
 
-  # Draw eta from MVN(mu_n, sigma^2 * Vn), all N_final draws at once.
-  # Rn = L_M^{-1} (lower triangular), pre-computed in C++. The formula
-  # crossprod(Rn, z) = t(Rn) %*% z gives draws with covariance t(Rn)*Rn = Vn.
-  # Column j of Z holds the standard normals of draw j (same RNG stream as one
-  # rnorm(n_eta) per draw); Z_draws[k, i, j] = Z[k, j], so that
-  # colSums(Rn_draws * Z_draws)[i, j] = (t(Rn_j) %*% Z[, j])[i].
+  # eta ~ N(mu_n, \sigma^2 V_n), with V_n = t(Rn) Rn; all draws at once
+  # (column j of Z: standard normals of draw j)
   Z <- matrix(stats::rnorm(n_eta * N_final), nrow = n_eta, ncol = N_final)
   Rn_draws <- ml_res$Rn[, , res_idx, drop = FALSE]
   Z_draws  <- array(Z[, rep(seq_len(N_final), each = n_eta)], dim = c(n_eta, n_eta, N_final))
   etas <- t(ml_res$mu_n[, res_idx, drop = FALSE] +
               sweep(colSums(Rn_draws * Z_draws), 2, sqrt(sigma2s), "*"))
 
-  # Name the eta columns (C++ buffer order: s_m, s_{m-1}, ..., s_1)
+  # C++ order: l, [b,] s_m, ..., s1
   eta_col_names_cpp <- c("l", if (trend) "b",
                          if (seas) paste0("s", rev(seq_len(m))))
   colnames(etas) <- eta_col_names_cpp
 
-  # Reorder to R convention (l, [b,] s1, ..., s_m) for RSS_vect_arma
+  # R order: l, [b,] s1, ..., s_m
   eta_col_names_r <- c("l", if (trend) "b",
                        if (seas) paste0("s", seq_len(m)))
   etas <- etas[, eta_col_names_r, drop = FALSE]
 
-  # Compute final states by running the model forward with drawn (theta, eta)
+  # Final states
   refit_final <- RSS_vect_arma(
     yR = as.numeric(y),
     trend = trend,
@@ -272,22 +243,13 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
 }
 
 
-##############################################################################
-### Adaptive Importance Sampling Helpers ###
+################################################################################
+# AIS HELPERS
 
-# Adaptive importance sampling of g = exp(log g) over R^d.
-#   log_g_fn, z_start : as in adaptive_gh_quadrature().
-#   n_draw            : draws per iteration.
-#   min_ess           : stop as soon as the ESS of the pooled draws reaches it.
-# The first proposal is a multivariate Student-t (df) centred at the mode of
-# log g with scale matrix scale * H^{-1} (H the Hessian of -log g there, see
-# laplace_mode()).  While ESS < min_ess, the proposal is updated by weighted
-# moment matching (update_theta_only_proposal()) and new draws are added.  The
-# draws of all iterations are pooled and weighted against the mixture of all
-# proposals used so far (deterministic-mixture weights), so the ESS can only
-# grow.  Draws come from randomised Sobol points (RQMC).  Returns the log of
-# the IS estimate of the integral, the normalised weights of the pooled draws,
-# the draws, the output of log_g_fn per iteration and the ESS.
+# AIS of g = exp(log g) on R^d (log_g_fn, z_start as in adaptive_gh_quadrature()).
+# Student-t proposal at the mode of log g, with scale matrix scale * H^{-1};
+# updated while ESS < min_ess, adding n_draw draws per iteration. The draws of
+# all iterations are pooled and weighted with the mixture of the proposals.
 adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
                                          df = 5, scale = 4,
                                          n_iter_max = 30, lr = 0.9,
@@ -301,7 +263,7 @@ adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
   Z <- NULL
   log_g <- NULL
   for (iter in seq_len(n_iter_max)) {
-    # ---- Draw and evaluate log g, all draws of the iteration in one batch ----
+    # New draws, evaluated in one batch
     t0 <- proc.time()[3]
     Z_new <- draw_t_rqmc(n_draw, proposal$mus, proposal$Sigma, proposal$df)
     draw_eval <- log_g_fn(Z_new)
@@ -311,7 +273,7 @@ adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
     Z <- rbind(Z, Z_new)
     log_g <- c(log_g, draw_eval$log_g)
 
-    # ---- Weights of the pooled draws ----
+    # Weights of the pooled draws
     log_w <- log_g - log_mix_density(Z, proposals)
     log_w[!is.finite(log_w)] <- -Inf
     lw_max <- max(log_w)
@@ -332,7 +294,7 @@ adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
     }
     if (ess >= min_ess || iter == n_iter_max) break
 
-    # ---- Update the proposal ----
+    # Proposal update
     t0 <- proc.time()[3]
     proposal <- update_theta_only_proposal(Z, w, proposal, lr = lr)
     timing$update <- timing$update + (proc.time()[3] - t0)
@@ -351,22 +313,20 @@ adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
   )
 }
 
-# n RQMC draws from the multivariate Student-t (df) with location mu and scale
-# matrix Sigma: d coordinates of randomised Sobol points through qnorm, one
-# through qchisq for the mixing variable.
+# n draws from a multivariate Student-t, from randomised Sobol points
 draw_t_rqmc <- function(n, mu, Sigma, df) {
   d <- length(mu)
   u <- matrix(qrng::sobol(n, d = d + 1, randomize = "digital.shift"), ncol = d + 1)
   eps  <- stats::qnorm(u[, seq_len(d), drop = FALSE])
   chi2 <- stats::qchisq(u[, d + 1], df = df)
   devs <- (eps %*% chol(Sigma)) / sqrt(chi2 / df)
-  # Drop the (measure-zero) draws from points that land exactly on 0 or 1.
+  # Drop draws from points exactly on 0 or 1
   devs <- devs[rowSums(!is.finite(devs)) == 0, , drop = FALSE]
   sweep(devs, 2, mu, "+")
 }
 
-# Log density at the rows of Z of the mixture of Student-t proposals, each
-# weighted by its share of draws (list elements: mus, Sigma, df, n).
+# Log-density of the mixture of the proposals at the rows of Z (weights: share
+# of the draws)
 log_mix_density <- function(Z, proposals) {
   n_tot <- sum(vapply(proposals, `[[`, numeric(1), "n"))
   log_q <- vapply(proposals, function(p) {
@@ -377,8 +337,7 @@ log_mix_density <- function(Z, proposals) {
   q_max + log(rowSums(exp(log_q - q_max)))
 }
 
-# Concatenate marginal_likelihood_rb(..., return_posterior = TRUE) outputs of
-# several batches of particles, in the same order as their rows.
+# Binds the outputs of marginal_likelihood_rb() for several batches of particles
 bind_ml_res <- function(ml_list) {
   if (length(ml_list) == 1L) return(ml_list[[1]])
   n_eta <- nrow(ml_list[[1]]$mu_n)
@@ -391,7 +350,7 @@ bind_ml_res <- function(ml_list) {
   )
 }
 
-# Update theta-only proposal via weighted moment matching
+# Proposal update by weighted moment matching
 update_theta_only_proposal <- function(theta_unc, w, prev_params,
                                        lr = 0.9, min_var = 1e-6,
                                        lambda_shr = 0.1) {

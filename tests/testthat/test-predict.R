@@ -72,7 +72,7 @@ test_that("predict.bets() mean starts immediately after end of training series",
 
 test_that("predict.bets() mean starts correctly for seasonal series (freq > 1)", {
   fc <- predict(fit_seas, h = 4)
-  # For frequency=4, time step is 0.25 — NOT 4 (the frequency value itself)
+  # Time step 1 / frequency
   expected_start <- stats::tsp(fit_seas$y)[2] + 1 / stats::frequency(fit_seas$y)
   expect_equal(stats::tsp(fc$mean)[1], expected_start, tolerance = 1e-10)
 })

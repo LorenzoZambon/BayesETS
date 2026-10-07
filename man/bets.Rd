@@ -16,105 +16,102 @@ bets(
 \arguments{
 \item{y}{Univariate time series.}
 
-\item{model}{Model space. Use \code{"ZZZ"} (default) to search a predefined set,
-or pass a specific model specification (e.g., "AAdN").}
+\item{model}{Model space: \code{"ZZZ"} (default) for a predefined set of models,
+or a model specification (e.g. \code{"AAdN"}), or a list of them.}
 
-\item{combination}{How the model fits are combined: \code{"bma"} (Bayesian Model
-Averaging, default) or \code{"stacking"}.}
+\item{combination}{How the models are combined: \code{"bma"} (default) or
+\code{"stacking"}.}
 
-\item{additive.only}{Logical; if \code{TRUE} (default), only additive-error models are considered.
-Currently, setting \code{additive.only = FALSE} will result in an error.}
+\item{additive.only}{Logical; only \code{TRUE} (default) is currently supported.}
 
 \item{verbose}{\code{0} (default) prints nothing, \code{1} prints the model weights,
-\code{2} also prints the progress of each model fit. \code{TRUE}/\code{FALSE} are
-accepted as \code{1}/\code{0}.}
+\code{2} also prints the progress of each fit. \code{TRUE}/\code{FALSE} are accepted as
+\code{1}/\code{0}.}
 
-\item{control}{Named list of tuning parameters. Missing values are filled from
-package defaults. See \strong{Details}.}
+\item{control}{Named list of tuning parameters, see \strong{Details}. Missing
+entries take their default values.}
 }
 \value{
 An object of class \code{"bets"}.
 }
 \description{
-Estimates multiple ETS variants by drawing samples from the posterior distribution
-of the parameters, using adaptive Gauss-Hermite quadrature or adaptive
-importance sampling (AIS).
-The resulting model fits are then combined into a single predictive distribution,
-either by Bayesian Model Averaging (BMA) or stacking.
-Currently only additive-error models are supported (i.e. \code{additive.only = TRUE}).
+Fits several ETS models and combines them into a single predictive
+distribution, by Bayesian Model Averaging (BMA) or stacking.
+The smoothing parameters are integrated by adaptive Gauss-Hermite quadrature
+or adaptive importance sampling (AIS); the initial states and the error
+variance are integrated analytically.
+Currently only additive-error models are supported.
 }
 \details{
 \subsection{Integration methods}{
 
-The smoothing parameters of each model are integrated out either by adaptive
-Gauss-Hermite quadrature or by adaptive importance sampling (AIS). Both start
-from the posterior mode of the unconstrained smoothing parameters and the
-inverse Hessian there. Quadrature integrates on a Gauss-Hermite grid scaled
-by the inverse Hessian. AIS draws from a Student-t proposal centred at the
-mode, sampled with randomised Sobol points, and adapts it only while the
-effective sample size is below \code{min_ess} (usually a single step suffices).
-Initial states and error variance are integrated out analytically in both
-cases. By default (\code{integration = "auto"} in \code{control}), quadrature is used
+Both methods start from the posterior mode of the (unconstrained) smoothing
+parameters and the inverse Hessian there. Quadrature uses a Gauss-Hermite
+grid scaled by the inverse Hessian. AIS samples a Student-t proposal with
+randomised Sobol points, and adapts it until the effective sample size
+reaches \code{min_ess}. By default (\code{integration = "auto"}), quadrature is used
 for models with up to 2 smoothing parameters (ANN, AAN, ANA) and AIS for
-models with 3 or 4 (AAdN, AAA, AAdA), where quadrature is less accurate.
+the others (AAdN, AAA, AAdA).
 }
 
 \subsection{Seasonal period}{
 
-The seasonal period is \code{frequency(y)}, with the same rules as
-\code{forecast::ets()}: a frequency below 1 (e.g. decennial data) counts as 1,
-and a non-integer frequency (e.g. 52.18 for weekly data) allows
-non-seasonal models only; both cases give a warning. Seasonal models also require a
-period of at most 24 and more than one full period of data. With
-\code{model = "ZZZ"}, seasonal models are left out when these conditions do not
-hold (with a warning for a period above 24); requesting a seasonal model
-explicitly is then an error. Forecasts keep the time index of \code{y}.
+The seasonal period is \code{frequency(y)}, with the rules of \code{forecast::ets()}:
+a frequency below 1 counts as 1, and a non-integer frequency (e.g. weekly
+data) allows only non-seasonal models, both with a warning. Seasonal models
+also require a period of at most 24 and more than one full period of data.
+With \code{model = "ZZZ"}, seasonal models are dropped when these conditions do
+not hold; requesting one explicitly is an error.
 }
 
 \subsection{Constant series}{
 
-A constant series is fitted with ETS(A,N,N) whatever \code{model} is, with a
-warning: the forecasts equal the constant, and since the data show no
-variability the width of the intervals comes from the prior of the error
-variance. Its default scale is \verb{psi0 = (0.2 * |level|)^2} (\code{0.2^2} for a
-series of zeros); the intervals narrow as the series gets longer and widen
-with the horizon. Set \code{psi0} in \code{control} to choose the scale.
+A constant series is fitted with ETS(A,N,N), with a warning. The forecasts
+are constant, and the width of the intervals depends on the prior of the
+error variance (set by a heuristic, or by \code{psi0} in \code{control}).
 }
 
 \subsection{Control parameters}{
 
-The \code{control} argument accepts a named list with the following entries: (TODO)
+The \code{control} argument accepts a named list with the following entries.
+Entries indexed by \code{d} have one value per number of smoothing parameters
+(\code{d} = 1, ..., 4); a scalar applies to all \code{d}.
+
+Integration:
 \itemize{
-\item \code{prior_models}: optional prior model probabilities for BMA, passed as a
-list (...). Default: equal weights.
-\item \code{nu0}, \code{psi0}: prior of the error variance, a scaled inverse chi-squared
-with \code{nu0} degrees of freedom (default 3, must be greater than 2) and
-prior mean \code{psi0 / (nu0 - 2)}. The default \code{psi0 = NULL} uses the
-residual variance of the naive forecast or, if smaller, of the seasonal
-naive one. The prior covariance of the initial states is proportional to
-the error variance, and equals a data-based heuristic at its prior mean.
-\item \code{integration}: \code{"auto"} (default, see above), \code{"quadrature"} or \code{"ais"},
-to force one method for all models. Forcing quadrature is not recommended
-for models with 3 or more smoothing parameters: its error grows with the
-dimension and can be large for strongly non-Gaussian posteriors.
-\item \code{N_draw}: Number of AIS draws per iteration, indexed by the number \code{d} of
-smoothing parameters (1 to 4). Default \code{c(128, 256, 512, 1024)}; a scalar
-applies to all \code{d}. Powers of 2 are optimal for Sobol sequences.
-\item \code{min_ess}: AIS stops as soon as the effective sample size of all draws so
-far reaches \code{min_ess}. Default \code{NULL} resolves to \code{N_draw / 4}. Models that
-do not reach it within \code{N_iter_max} iterations (default 30) get zero weight;
-if all models do, \code{bets()} stops with an error.
-\item \code{N_final}: Number of posterior draws kept per model (used by \code{\link[=predict.bets]{predict.bets()}}),
-indexed by \code{d} like \code{N_draw}. Default \code{c(100, 300, 500, 500)}.
-\item \code{is_df}, \code{is_scale}: Degrees of freedom of the Student-t proposal of AIS
-(default 5) and inflation of its initial scale matrix relative to the
-inverse Hessian (default 4).
-\item \code{n_scan}: Number of points of the prior scan (randomised Sobol points,
-evaluated in one batch) whose best point starts the search for the
-posterior mode, for both methods. Default 64.
-\item \code{n_quad}: Number of Gauss-Hermite nodes per dimension for quadrature,
-indexed by \code{d} like \code{N_draw}; the grid has \code{n_quad[d]^d} nodes. Default
-\code{c(21, 21, 9, 7)}.
+\item \code{integration}: \code{"auto"} (default), \code{"quadrature"} or \code{"ais"}, to use one
+method for all models. Quadrature is not recommended for models with 3 or
+more smoothing parameters.
+\item \code{n_scan}: number of prior points evaluated to start the search of the
+posterior mode. Default 64.
+\item \code{N_draw}: number of AIS draws per iteration, indexed by \code{d}. Default
+\code{c(128, 256, 512, 1024)}. Powers of 2 work best with Sobol points.
+\item \code{min_ess}, \code{N_iter_max}: AIS stops when the effective sample size reaches
+\code{min_ess} (default \code{N_draw / 4}), or after \code{N_iter_max} iterations
+(default 30). In the second case the model gets zero weight; if all
+models do, \code{bets()} stops with an error.
+\item \code{is_df}, \code{is_scale}: degrees of freedom (default 5) and scale inflation
+(default 4) of the AIS proposal.
+\item \code{lr}: maximum weight of the new estimates when the AIS proposal is
+updated (default 0.9).
+\item \code{n_quad}: number of Gauss-Hermite nodes per dimension, indexed by \code{d}.
+Default \code{c(21, 21, 9, 7)}.
+\item \code{N_final}: number of posterior draws kept per model, used by
+\code{\link[=predict.bets]{predict.bets()}}, indexed by \code{d}. Default \code{c(200, 300, 500, 500)}.
+}
+
+Priors:
+\itemize{
+\item \code{nu0}, \code{psi0}: prior of the error variance \eqn{\sigma^2}, a scaled
+inverse chi-squared with \code{nu0} degrees of freedom (default 3, must be
+greater than 2) and mean \code{psi0 / (nu0 - 2)}. By default, \code{psi0} is the
+residual variance of the naive or seasonal naive forecasts.
+\item \code{c_inflate_eta}: inflation factor of the prior covariance of the initial
+states, which is set by a heuristic (default 3).
+\item \code{phi_min}, \code{phi_max}: range of the damping parameter (default 0.8 and
+0.98). All smoothing parameters have uniform priors.
+\item \code{prior_models}: prior model probabilities for BMA, one per model.
+Default: equal.
 }
 }
 }

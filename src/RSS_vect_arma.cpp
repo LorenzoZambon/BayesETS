@@ -3,6 +3,9 @@ using namespace Rcpp;
 using namespace arma;
 
 // [[Rcpp::depends(RcppArmadillo)]]
+
+// One-step residuals, RSS and final states of the additive ETS model, for each
+// row of params and init_states (l, [b,] s1, ..., s_m)
 // [[Rcpp::export]]
 List RSS_vect_arma(NumericVector yR,
                    bool trend,
@@ -47,6 +50,7 @@ List RSS_vect_arma(NumericVector yR,
     b.col(0) = init_states.col(1);
   }
   if (seas) {
+    // s_m is used first
     s.set_size(N, L+m);
     for (int j=0; j<m; j++) {
       s.col(j) = init_states.col((trend ? 2 : 1) + m-1-j);;
@@ -61,8 +65,7 @@ List RSS_vect_arma(NumericVector yR,
     residuals.fill(0.0);
   }
   
-  // Loop over time
-  // Pre-allocate temporaries outside the loop to avoid N*L heap allocations
+  // Loop over time (temporaries allocated once)
   vec ft(N);
   vec e(N);
   for (int t=0; t<L; t++) {
@@ -88,7 +91,7 @@ List RSS_vect_arma(NumericVector yR,
     }
   }
   
-  // Last states
+  // Final states
   int ncols = 1 + (trend ? 1 : 0) + (seas ? m : 0);
   mat states(N, ncols, fill::zeros);
   states.col(0) = l.col(L);
