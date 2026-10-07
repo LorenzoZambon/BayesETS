@@ -37,25 +37,6 @@ test_that("'AAdA' parses to damped trend with season", {
 })
 
 # ---------------------------------------------------------------------------
-# 3/4-element character vectors
-# ---------------------------------------------------------------------------
-
-test_that("3-element vector c('A','A','N') parses correctly", {
-  mc <- BETS:::coerce_model_components(c("A", "A", "N"), m = 1)
-  expect_identical(mc[[1]], c("A", "A", "N", "FALSE"))
-})
-
-test_that("4-element vector with damped='TRUE' parses correctly", {
-  mc <- BETS:::coerce_model_components(c("A", "A", "N", "TRUE"), m = 1)
-  expect_identical(mc[[1]], c("A", "A", "N", "TRUE"))
-})
-
-test_that("4-element vector with logical damped=TRUE parses correctly", {
-  mc <- BETS:::coerce_model_components(c("A", "A", "N", "TRUE"), m = 1)
-  expect_identical(mc[[1]], c("A", "A", "N", "TRUE"))
-})
-
-# ---------------------------------------------------------------------------
 # ZZZ model space
 # ---------------------------------------------------------------------------
 
@@ -72,9 +53,40 @@ test_that("'ZZZ' with m=12 returns 6 models", {
 })
 
 test_that("'ZZZ' leaves out seasonal models when n <= m or m > 24", {
-  expect_length(BETS:::coerce_model_components("ZZZ", m = 12, n = 12), 3)
+  expect_warning(mc <- BETS:::coerce_model_components("ZZZ", m = 12, n = 12), "not sufficient")
+  expect_length(mc, 3)
   expect_warning(mc <- BETS:::coerce_model_components("ZZZ", m = 48, n = 200), "> 24")
   expect_length(mc, 3)
+})
+
+labels_of <- function(model, m = 12, n = Inf) {
+  vapply(BETS:::coerce_model_components(model, m, n = n), BETS:::ets_label, character(1))
+}
+
+test_that("'ZZZ' gives the 6 additive models in a fixed order", {
+  expect_identical(labels_of("ZZZ"), c("ANN", "AAN", "AAdN", "ANA", "AAA", "AAdA"))
+})
+
+test_that("partial 'Z' codes give all the options of their components", {
+  expect_identical(labels_of("AZN"), c("ANN", "AAN", "AAdN"))
+  expect_identical(labels_of("ANZ"), c("ANN", "ANA"))
+  expect_identical(labels_of("ANZ", m = 1), "ANN")    # no warning for non-seasonal data
+  expect_warning(lab <- labels_of("ANZ", n = 10), "not sufficient")
+  expect_identical(lab, "ANN")
+  expect_identical(labels_of(list("ZZZ")), labels_of("ZZZ"))
+})
+
+test_that("a vector or list of codes gives one model per code", {
+  expect_identical(labels_of(c("ANN", "AAdN", "ANA")), c("ANN", "AAdN", "ANA"))
+  expect_identical(labels_of(list("ANN", "AAdN", "ANA")), c("ANN", "AAdN", "ANA"))
+})
+
+test_that("duplicate models are removed with a warning", {
+  expect_warning(mc <- BETS:::coerce_model_components(c("ANN", "ann", "A N N"), m = 1),
+                 "Duplicate models removed: ANN")
+  expect_length(mc, 1)
+  expect_warning(lab <- labels_of(list("AZN", "AAdN")), "Duplicate models removed: AAdN")
+  expect_identical(lab, c("ANN", "AAN", "AAdN"))
 })
 
 # ---------------------------------------------------------------------------
@@ -137,16 +149,13 @@ test_that("invalid season component raises an error", {
   )
 })
 
-test_that("damped trend with no trend component raises an error", {
-  expect_error(
-    BETS:::coerce_model_components(c("A", "N", "N", "TRUE"), m = 1),
-    "Damped trend is only valid"
-  )
+test_that("damping is only allowed for an additive or multiplicative trend", {
+  expect_error(BETS:::coerce_model_components("ANdN", m = 1), "Invalid trend component")
+  expect_error(BETS:::coerce_model_components("AZdA", m = 12), "Invalid trend component")
 })
 
-test_that("invalid damped value raises an error", {
-  expect_error(
-    BETS:::coerce_model_components(c("A", "A", "N", "MAYBE"), m = 1),
-    "Invalid damped component"
-  )
+test_that("codes of invalid length and component vectors raise an error", {
+  expect_error(BETS:::coerce_model_components("AN", m = 1), "must have 3 characters")
+  expect_error(BETS:::coerce_model_components(c("A", "A", "N"), m = 1), "must have 3 characters")
+  expect_error(BETS:::coerce_model_components(1, m = 1), "model must be an ETS code")
 })

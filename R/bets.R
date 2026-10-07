@@ -8,8 +8,9 @@
 #' Currently only additive-error models are supported.
 #'
 #' @param y Univariate time series.
-#' @param model Model space: `"ZZZ"` (default) for a predefined set of models,
-#'   or a model specification (e.g. `"AAdN"`), or a list of them.
+#' @param model Models to fit: either an ETS code (made of 3 or 4 characters, see **Details**) 
+#' or a vector of ETS codes. Default is `"ZZZ"` (all supported models).
+#'   Duplicate models are dropped.
 #' @param combination How the models are combined; only `"bma"` (default) is
 #'   currently supported.
 #' @param additive.only Logical; only `TRUE` (default) is currently supported.
@@ -20,6 +21,20 @@
 #'   entries take their default values.
 #'
 #' @details
+#' 
+#' ## ETS codes
+#' 
+#' An ETS code must have 3 or 4 characters; the possible values for each component are:
+#' - Error: `"A"`, `"M"`, `"Z"`
+#' - Trend: `"N"`, `"A"`, `"M"`, `"Z"`, `"Ad"`, `"Md"`
+#' - Season: `"N"`, `"A"`, `"M"`, `"Z"`
+#' 
+#' `"A"`: additive,
+#' `"Ad"`: additive damped,
+#' `"M"`: multiplicative,
+#' `"Md"`: multiplicative damped,
+#' `"Z"`: all supported options for the component.
+#' 
 #' ## Integration methods
 #'
 #' Both methods start from the posterior mode of the (unconstrained) smoothing

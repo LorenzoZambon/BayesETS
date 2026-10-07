@@ -16,8 +16,10 @@ bets(
 \arguments{
 \item{y}{Univariate time series.}
 
-\item{model}{Model space: \code{"ZZZ"} (default) for a predefined set of models,
-or a model specification (e.g. \code{"AAdN"}), or a list of them.}
+\item{model}{Models to fit: an ETS code such as \code{"AAdN"}, where \code{"Z"} lets a
+component take all its supported options (default \code{"ZZZ"}: all supported
+models; e.g. \code{"AZN"}: the non-seasonal models), or a vector of codes.
+Duplicate models are dropped.}
 
 \item{combination}{How the models are combined; only \code{"bma"} (default) is
 currently supported.}

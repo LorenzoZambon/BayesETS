@@ -127,26 +127,6 @@ seasonal_period <- function(y) {
   as.integer(round(m))
 }
 
-# Models of "ZZZ" for seasonal period m
-bets_model_space <- function(m) {
-  if (m > 1) {
-    list(
-      c("A", "N", "N", "FALSE"),
-      c("A", "A", "N", "FALSE"),
-      c("A", "A", "N", "TRUE"),
-      c("A", "N", "A", "FALSE"),
-      c("A", "A", "A", "FALSE"),
-      c("A", "A", "A", "TRUE")
-    )
-  } else {
-    list(
-      c("A", "N", "N", "FALSE"),
-      c("A", "A", "N", "FALSE"),
-      c("A", "A", "N", "TRUE")
-    )
-  }
-}
-
 # Components of a model as logicals: list(trend, seas, damped)
 model_flags <- function(model_components) {
   list(trend  = model_components[[2]] == "A",
@@ -166,125 +146,84 @@ n_states <- function(model_components, m) {
   1L + flags$trend + (if (flags$seas) m else 0L)
 }
 
-# Converts the model specification into a list of (error, trend, season, damped) vectors.
-# m: seasonal period, n: length of the series. 
-# As in forecast::ets(), seasonal models need 1 < m <= 24 and n > m.
+# Converts the model specification into a list of (error, trend, season, damped)
+# vectors. model: an ETS code (e.g. "AAdN"; "Z" for any option, e.g. "ZZZ" or
+# "AZN"), or a vector or list of codes. m: seasonal period, n: length of the series.
+# As in forecast::ets(), seasonal models need 1 < m <= 24 and n > m: otherwise
+# the seasonal options of "Z" are dropped, and explicit seasonal models are an error.
 coerce_model_components <- function(model, m, additive.only = TRUE, n = Inf) {
-  if (!is.logical(additive.only) || length(additive.only) != 1 || is.na(additive.only)) {
-    stop("additive.only must be TRUE or FALSE")
+  if (is.null(model)) model <- "ZZZ"
+  if (is.list(model)) model <- unlist(model)
+  if (!is.character(model) || length(model) == 0) {
+    stop("model must be an ETS code (e.g. 'AAdN') or a vector of codes")
+  }
+  specs <- lapply(model, parse_model_spec)
+
+  seasonal_ok <- m > 1 && m <= 24 && n > m
+  if (m > 1 && !seasonal_ok && any(vapply(specs, function(s) s$season == "Z", logical(1)))) {
+    warning(if (m > 24) "Seasonal models are not supported for frequency(y) > 24. "
+            else "The number of observations is not sufficient for seasonal models. ",
+            "Only non-seasonal models will be considered.", call. = FALSE)
   }
 
-  normalize_damped <- function(damped) {
-    if (is.logical(damped) && length(damped) == 1 && !is.na(damped)) {
-      return(if (damped) "TRUE" else "FALSE")
-    }
-    if (!is.character(damped) || length(damped) != 1) {
-      stop("Invalid damped component: use TRUE/FALSE (or T/F)")
-    }
-    damped_upper <- toupper(damped)
-    switch(
-      damped_upper,
-      "TRUE" = "TRUE",
-      "FALSE" = "FALSE",
-      "T" = "TRUE",
-      "F" = "FALSE",
-      stop("Invalid damped component: use TRUE/FALSE (or T/F)")
-    )
+  models <- unlist(lapply(specs, expand_model_spec, m = m, n = n,
+                          additive.only = additive.only, seasonal_ok = seasonal_ok),
+                   recursive = FALSE)
+  dup <- duplicated(models)
+  if (any(dup)) {
+    warning("Duplicate models removed: ",
+            paste(unique(vapply(models[dup], ets_label, character(1))), collapse = ", "),
+            call. = FALSE)
+    models <- models[!dup]
+  }
+  models
+}
+
+# Components of one ETS code (e.g. "AAdN", "AZN"): list(error, trend, season,
+# damped), with damped NA (both) for trend "Z"
+parse_model_spec <- function(code) {
+  code <- gsub("\\s+", "", toupper(code))
+  parts <- if (nchar(code) == 3) {
+    strsplit(code, "")[[1]]
+  } else if (nchar(code) == 4 && substr(code, 3, 3) == "D") {
+    c(substr(code, 1, 1), substr(code, 2, 3), substr(code, 4, 4))
+  } else {
+    stop("A model code must have 3 characters (e.g. 'ANN'), or 4 for a damped trend (e.g. 'AAdN')")
+  }
+  if (!parts[1] %in% c("A", "M", "Z")) {
+    stop("Invalid error component: allowed values are 'A', 'M', 'Z'")
+  }
+  if (!parts[2] %in% c("N", "A", "M", "Z", "AD", "MD")) {
+    stop("Invalid trend component: allowed values are 'N', 'A', 'M', 'Ad', 'Md', 'Z'")
+  }
+  if (!parts[3] %in% c("N", "A", "M", "Z")) {
+    stop("Invalid seasonal component: allowed values are 'N', 'A', 'M', 'Z'")
+  }
+  trend <- substr(parts[2], 1, 1)
+  damped <- if (trend == "Z") NA else if (nchar(parts[2]) == 2) "TRUE" else "FALSE"
+  list(error = parts[1], trend = trend, season = parts[3], damped = damped)
+}
+
+# Models of one parsed code: each "Z" gives all its allowed options; explicit
+# components that are not allowed are an error
+expand_model_spec <- function(spec, m, n, additive.only, seasonal_ok) {
+  if (additive.only && "M" %in% c(spec$error, spec$trend, spec$season)) {
+    stop("Multiplicative components are not allowed when additive.only = TRUE")
+  }
+  if (spec$season %in% c("A", "M")) {
+    if (m <= 1) stop("Seasonal models require frequency(y) to be an integer > 1")
+    if (m > 24) stop("Seasonal models are not supported for frequency(y) > 24")
+    if (n <= m) stop("Seasonal models require more than frequency(y) observations")
   }
 
-  normalize_components <- function(error_comp, trend_comp, season_comp, damped = NULL) {
-    error_comp <- toupper(error_comp)
-    trend_comp <- toupper(trend_comp)
-    season_comp <- toupper(season_comp)
-
-    if (trend_comp %in% c("AD", "MD")) {
-      trend_base <- substr(trend_comp, 1, 1)
-      damped_from_trend <- "TRUE"
-    } else if (trend_comp %in% c("A", "M", "N")) {
-      trend_base <- trend_comp
-      damped_from_trend <- "FALSE"
-    } else {
-      stop("Invalid trend component: allowed values are 'N', 'A', 'M', 'Ad', 'Md'")
-    }
-
-    if (!error_comp %in% c("A", "M")) {
-      stop("Invalid error component: allowed values are 'A' or 'M'")
-    }
-    if (!season_comp %in% c("N", "A", "M")) {
-      stop("Invalid seasonal component: allowed values are 'N', 'A', 'M'")
-    }
-
-    if (season_comp != "N") {
-      if (m <= 1) stop("Seasonal models require frequency(y) to be an integer > 1")
-      if (m > 24) stop("Seasonal models are not supported for frequency(y) > 24")
-      if (n <= m) stop("Seasonal models require more than frequency(y) observations")
-    }
-
-    damped_norm <- if (is.null(damped)) damped_from_trend else normalize_damped(damped)
-
-    if (trend_base == "N" && damped_norm == "TRUE") {
-      stop("Damped trend is only valid when trend component is 'A' or 'M'")
-    }
-
-    if (additive.only && any(c(error_comp, trend_base, season_comp) == "M")) {
-      stop("Multiplicative components are not allowed when additive.only = TRUE")
-    }
-
-    c(error_comp, trend_base, season_comp, damped_norm)
-  }
-
-  normalize_one_model <- function(x) {
-    if (is.character(x) && length(x) == 1) {
-      code <- gsub("\\s+", "", toupper(x))
-      if (identical(code, "ZZZ")) {
-        stop("'ZZZ' is only allowed as top-level model input")
-      }
-      if (nchar(code) == 3) {
-        return(normalize_components(
-          substr(code, 1, 1),
-          substr(code, 2, 2),
-          substr(code, 3, 3)
-        ))
-      }
-      if (nchar(code) == 4 && substr(code, 3, 3) == "D") {
-        return(normalize_components(
-          substr(code, 1, 1),
-          paste0(substr(code, 2, 2), "D"),
-          substr(code, 4, 4)
-        ))
-      }
-      stop("model string must be 'ZZZ', a 3-character ETS code (e.g. 'ANN'), or a 4-character damped code (e.g. 'AAdN')")
-    }
-
-    if (is.character(x) && length(x) == 3) {
-      return(normalize_components(x[[1]], x[[2]], x[[3]]))
-    }
-
-    if (is.character(x) && length(x) == 4) {
-      return(normalize_components(x[[1]], x[[2]], x[[3]], x[[4]]))
-    }
-
-    stop("Each model specification must be a 3/4-character ETS string or a 3/4-component character vector")
-  }
-
-  if (is.null(model) || identical(model, "ZZZ")) {
-    if (m > 24) {
-      warning("Seasonal models are not supported for frequency(y) > 24. ",
-              "Only non-seasonal models will be considered.", call. = FALSE)
-    } else if (m >= n) {
-      warning("The number of observations is not sufficient for seasonal models. ",
-              "Only non-seasonal models will be considered.", call. = FALSE)
-    }
-    return(bets_model_space(if (m <= 24 && n > m) m else 1L))
-  }
-
-  if (is.character(model) && length(model) %in% c(1, 3, 4)) {
-    return(list(normalize_one_model(model)))
-  }
-
-  if (is.list(model)) {
-    return(lapply(model, normalize_one_model))
-  }
-
-  stop("model must be 'ZZZ', a 3/4-character ETS code, a 3/4-component character vector, or a list of such specifications")
+  types <- if (additive.only) "A" else c("A", "M")
+  options_of <- function(x, any) if (x == "Z") any else x
+  # The first column varies fastest: "ZZZ" gives ANN, AAN, AAdN, ANA, AAA, AAdA
+  grid <- expand.grid(error  = options_of(spec$error, types),
+                      damped = if (is.na(spec$damped)) c("FALSE", "TRUE") else spec$damped,
+                      trend  = options_of(spec$trend, c("N", types)),
+                      season = options_of(spec$season, c("N", if (seasonal_ok) types)),
+                      stringsAsFactors = FALSE)
+  grid <- grid[!(grid$trend == "N" & grid$damped == "TRUE"), c("error", "trend", "season", "damped")]
+  lapply(seq_len(nrow(grid)), function(i) unname(unlist(grid[i, ])))
 }

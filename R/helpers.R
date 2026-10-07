@@ -53,7 +53,7 @@ compute_stacking_weights <- function(log_lik_list) {
 #' @return Character string.
 #' @keywords internal
 ets_label <- function(model_components) {
-  d <- if (model_components[[4]] == "TRUE" && model_components[[2]] == "A") "d" else ""
+  d <- if (model_components[[4]] == "TRUE") "d" else ""
   paste0(model_components[[1]], model_components[[2]], d, model_components[[3]])
 }
 
