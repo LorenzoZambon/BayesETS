@@ -15,7 +15,15 @@ test_that("bets() rejects additive.only = NA", {
 })
 
 test_that("bets() rejects unknown control keys", {
-  expect_error(bets(ts(1:10), control = list(foo = 1)), "Unknown control entries")
+  expect_error(bets(ts(1:10), control = list(foo = 1)), "Unknown control entry 'foo'")
+})
+
+test_that("bets() stops with a clear error when no model can be fitted", {
+  set.seed(1)
+  expect_error(
+    suppressWarnings(bets(ts(rnorm(30)), model = list("ANN", "AAdN"),
+                          control = list(integration = "ais", min_ess = 1e6, N_iter_max = 1))),
+    "No model could be fitted")
 })
 
 # ---------------------------------------------------------------------------
@@ -148,9 +156,9 @@ test_that("constant series: flat forecasts, intervals from the sigma^2 prior", {
   w_long <- width95(predict(suppressWarnings(bets(ts(rep(5, 50)))), h = 1, n_traj = 4000))
   expect_lt(w_long, w_short)
   w_psi <- vapply(c(1, 100), function(psi0) {
-  set.seed(1)
+    set.seed(1)
     width95(predict(suppressWarnings(bets(ts(rep(5, 50)), control = list(psi0 = psi0))),
-                           h = 1, n_traj = 4000))
+                    h = 1, n_traj = 4000))
   }, numeric(1))
   expect_equal(w_psi[2] / w_psi[1], 10, tolerance = 1e-6)
 })

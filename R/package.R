@@ -77,6 +77,11 @@ fit_bets_models <- function(y,
     if (need_pointwise) log_lik_list[[i]] <- res_i$log_lik_pointwise
   }
 
+  if (!any(is.finite(log_marginal_liks))) {
+    stop("No model could be fitted: all of them got zero weight (see the warnings). ",
+         "Larger N_draw or N_iter_max in control may help AIS.", call. = FALSE)
+  }
+
   t0 <- proc.time()[3]
   if (need_pointwise) {
     model_weights <- compute_stacking_weights(log_lik_list)

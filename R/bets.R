@@ -76,7 +76,8 @@
 #'   applies to all `d`. Powers of 2 are optimal for Sobol sequences.
 #' - `min_ess`: AIS stops as soon as the effective sample size of all draws so
 #'   far reaches `min_ess`. Default `NULL` resolves to `N_draw / 4`. Models that
-#'   do not reach it within `N_iter_max` iterations (default 30) get zero weight.
+#'   do not reach it within `N_iter_max` iterations (default 30) get zero weight;
+#'   if all models do, `bets()` stops with an error.
 #' - `N_final`: Number of posterior draws kept per model (used by [predict.bets()]),
 #'   indexed by `d` like `N_draw`. Default `c(100, 300, 500, 500)`.
 #' - `is_df`, `is_scale`: Degrees of freedom of the Student-t proposal of AIS

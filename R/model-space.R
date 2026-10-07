@@ -50,16 +50,15 @@ bets_control_defaults <- function(freq = 1) {
 }
 
 resolve_bets_control <- function(control = list(), freq = 1) {
-  if (!is.list(control)) {
+  if (!is.list(control) || (length(control) > 0 &&
+                            (is.null(names(control)) || any(names(control) == "")))) {
     stop("control must be a named list")
   }
   defaults <- bets_control_defaults(freq)
 
-  # Check if control contains any unknown entries (not in defaults) and if so issue a warning and ignore them
   unknown <- setdiff(names(control), names(defaults))
   if (length(unknown) > 0) {
-    warning(sprintf("Unknown control entries: %s. They will be ignored.", paste(unknown, collapse = ", ")))
-    control <- control[setdiff(names(control), unknown)]
+    stop(unknown_control_message(unknown, names(defaults)), call. = FALSE)
   }
 
   ctrl <- utils::modifyList(defaults, control)
@@ -68,6 +67,21 @@ resolve_bets_control <- function(control = list(), freq = 1) {
     stop("control$nu0 must be a single number greater than 2")
   }
   ctrl
+}
+
+# Error message for unknown control entries: suggests the closest valid name
+# when it is a likely typo (edit distance at most 2, or a third of the name),
+# and lists all valid names.
+unknown_control_message <- function(unknown, valid) {
+  lines <- vapply(unknown, function(u) {
+    d <- utils::adist(u, valid, ignore.case = TRUE)[1, ]
+    msg <- sprintf("Unknown control entry '%s'.", u)
+    if (min(d) <= max(2, nchar(u) %/% 3)) {
+      msg <- sprintf("%s Did you mean '%s'?", msg, valid[which.min(d)])
+    }
+    msg
+  }, character(1))
+  paste(c(lines, paste("Valid entries:", paste(valid, collapse = ", "))), collapse = "\n")
 }
 
 # Seasonal period of y, with the rules of forecast::ets(): a frequency below 1

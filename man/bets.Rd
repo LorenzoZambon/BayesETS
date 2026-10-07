@@ -102,7 +102,8 @@ smoothing parameters (1 to 4). Default \code{c(128, 256, 512, 1024)}; a scalar
 applies to all \code{d}. Powers of 2 are optimal for Sobol sequences.
 \item \code{min_ess}: AIS stops as soon as the effective sample size of all draws so
 far reaches \code{min_ess}. Default \code{NULL} resolves to \code{N_draw / 4}. Models that
-do not reach it within \code{N_iter_max} iterations (default 30) get zero weight.
+do not reach it within \code{N_iter_max} iterations (default 30) get zero weight;
+if all models do, \code{bets()} stops with an error.
 \item \code{N_final}: Number of posterior draws kept per model (used by \code{\link[=predict.bets]{predict.bets()}}),
 indexed by \code{d} like \code{N_draw}. Default \code{c(100, 300, 500, 500)}.
 \item \code{is_df}, \code{is_scale}: Degrees of freedom of the Student-t proposal of AIS
