@@ -4,20 +4,27 @@
 \alias{predict.bets}
 \title{Predict from a BETS model}
 \usage{
-\method{predict}{bets}(object, newdata = NULL, h = 10, level = c(80, 95), n_traj = 1000, ...)
+\method{predict}{bets}(
+  object,
+  newdata = NULL,
+  h = NULL,
+  level = c(80, 95),
+  n_traj = 1000,
+  ...
+)
 }
 \arguments{
 \item{object}{A fitted object from \code{\link[=bets]{bets()}}.}
 
 \item{newdata}{Not supported: must be \code{NULL}.}
 
-\item{h}{Forecast horizon.}
+\item{h}{Forecast horizon. Default is the frequency of the series
+for seasonal series (if up to 24), and 10 otherwise.}
 
 \item{level}{Levels of the prediction intervals.}
 
-\item{n_traj}{Number of simulated trajectories (default 1000). With the
-default, the Monte Carlo error of the interval bounds is about 2\% of the
-width of the 95\% interval; it decreases as \code{1 / sqrt(n_traj)}.}
+\item{n_traj}{Number of simulated trajectories (default 1000).
+Increase it to reduce the Monte Carlo error of the interval bounds.}
 
 \item{...}{Unused.}
 }
@@ -27,4 +34,14 @@ An object of class \code{bets_forecast}.
 \description{
 Forecast distribution of a fitted \code{bets} object, from simulated
 trajectories.
+}
+\examples{
+set.seed(1)
+fit <- bets(USAccDeaths)
+fc <- predict(fit)
+fc
+
+# Set forecast horizon and levels of the prediction intervals
+predict(fit, h = 6, level = c(50, 90))
+
 }

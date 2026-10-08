@@ -13,6 +13,19 @@
 #' @return With `type = "mean"`, a `ts` with the time index of `y`. With
 #'   `type = "draws"`, a matrix with `n_draws` rows and one column per
 #'   observation.
+#'
+#' @examples
+#' set.seed(1)
+#' fit <- bets(USAccDeaths)
+#'
+#' # One-step-ahead fitted values (posterior mean) and residuals
+#' fitted(fit)
+#' residuals(fit)
+#'
+#' # Draws of the fitted values (from the posterior) and residuals
+#' fitted(fit, type = "draws")[1:5,1:12]   # only show first 5 draws and 12 observations
+#' residuals(fit, type = "draws")[1:5,1:12]
+#'
 #' @export
 fitted.bets <- function(object, type = c("mean", "draws"), n_draws = 1000, ...) {
   type <- match.arg(type)

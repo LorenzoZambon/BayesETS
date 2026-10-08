@@ -29,3 +29,16 @@ observation.
 \description{
 One-step-ahead fitted values and residuals on the training series.
 }
+\examples{
+set.seed(1)
+fit <- bets(USAccDeaths)
+
+# One-step-ahead fitted values (posterior mean) and residuals
+fitted(fit)
+residuals(fit)
+
+# Draws of the fitted values (from the posterior) and residuals
+fitted(fit, type = "draws")[1:5,1:12]   # only show first 5 draws and 12 observations
+residuals(fit, type = "draws")[1:5,1:12]
+
+}

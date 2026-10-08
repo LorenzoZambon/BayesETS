@@ -5,23 +5,39 @@
 #'
 #' @param object A fitted object from [bets()].
 #' @param newdata Not supported: must be `NULL`.
-#' @param h Forecast horizon.
+#' @param h Forecast horizon. Default is the frequency of the series
+#'   for seasonal series (if up to 24), and 10 otherwise.
 #' @param level Levels of the prediction intervals.
-#' @param n_traj Number of simulated trajectories (default 1000). With the
-#'   default, the Monte Carlo error of the interval bounds is about 2% of the
-#'   width of the 95% interval; it decreases as `1 / sqrt(n_traj)`.
+#' @param n_traj Number of simulated trajectories (default 1000).
+#'   Increase it to reduce the Monte Carlo error of the interval bounds.
 #' @param ... Unused.
 #'
 #' @return An object of class `bets_forecast`.
+#'
+#' @examples
+#' set.seed(1)
+#' fit <- bets(USAccDeaths)
+#' fc <- predict(fit)
+#' fc
+#'
+#' # Set forecast horizon and levels of the prediction intervals
+#' predict(fit, h = 6, level = c(50, 90))
+#'
 #' @export
-predict.bets <- function(object, newdata = NULL, h = 10, level = c(80, 95),
+predict.bets <- function(object, newdata = NULL, h = NULL, level = c(80, 95),
                          n_traj = 1000, ...) {
   if (!is.null(newdata))
     stop("`newdata` is not supported for BETS models: forecasts are always ",
          "generated forward from the end of the training series.")
 
-  if (!is_count(h))
-    stop("h must be a single positive integer")
+  if (is.null(h)) {                     # default: set h to either 10 or frequency of the series
+    m <- round(stats::frequency(object$y))
+    h <- if (m > 1 && m <= 24) m else 10
+  } else {
+    if (!is_count(h))
+      stop("h must be a single positive integer")
+  }
+
   if (!is_count(n_traj))
     stop("n_traj must be a single positive integer")
 

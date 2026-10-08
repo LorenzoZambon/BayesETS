@@ -38,6 +38,14 @@ test_that("predict.bets() accepts a custom n_traj", {
   expect_true(all(is.finite(fc$mean)))
 })
 
+test_that("predict.bets() default h: the frequency if in (1, 24], 10 otherwise", {
+  expect_length(predict(fit_ann, n_traj = 50)$mean, 10)
+  expect_length(predict(fit_seas, n_traj = 50)$mean, 4)
+  set.seed(42)
+  fit_48 <- bets(ts(rnorm(60), frequency = 48), model = "ANN")
+  expect_length(predict(fit_48, n_traj = 50)$mean, 10)
+})
+
 test_that("predict.bets() errors when level is out of (0, 100)", {
   expect_error(predict(fit_ann, h = 5, level = 0),   "level must be between 0 and 100")
   expect_error(predict(fit_ann, h = 5, level = 100), "level must be between 0 and 100")

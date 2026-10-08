@@ -103,6 +103,20 @@
 #'   each model and their weights (`fit`), the models (`model_components`), the
 #'   `control` settings as given (with defaults), the value of `psi0` used, and
 #'   the `call`.
+#'
+#' @examples
+#' set.seed(1)
+#' # Annual series: only additive non-seasonal models (ANN, AAN, AAdN), combined by BMA
+#' fit <- bets(Nile, additive.only = TRUE)
+#' fit
+#'
+#' # Monthly series: all additive models (ANN, AAN, AAdN, ANA, AAA, AAdA)
+#' fit_m <- bets(USAccDeaths, additive.only = TRUE)
+#' fit_m
+#'
+#' # Fit only some models
+#' bets(USAccDeaths, model = c("ANA", "AAA"))
+#'
 #' @export
 bets <- function(y,
                  model = "ZZZ",
