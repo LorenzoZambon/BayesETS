@@ -2,18 +2,18 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 RSS_vect_arma <- function(yR, trend, seas, damped, m, init_statesR, paramsR, return_residuals = FALSE) {
-    .Call(`_BETS_RSS_vect_arma`, yR, trend, seas, damped, m, init_statesR, paramsR, return_residuals)
+    .Call(`_BayesETS_RSS_vect_arma`, yR, trend, seas, damped, m, init_statesR, paramsR, return_residuals)
 }
 
 build_design_and_c_batch <- function(yR, trend, seas, damped, m, paramsR, return_final = FALSE) {
-    .Call(`_BETS_build_design_and_c_batch`, yR, trend, seas, damped, m, paramsR, return_final)
+    .Call(`_BayesETS_build_design_and_c_batch`, yR, trend, seas, damped, m, paramsR, return_final)
 }
 
 final_states_rb <- function(final_coef, final_const, eta, idx) {
-    .Call(`_BETS_final_states_rb`, final_coef, final_const, eta, idx)
+    .Call(`_BayesETS_final_states_rb`, final_coef, final_const, eta, idx)
 }
 
 marginal_likelihood_rb <- function(XtX_cube, Xty_mat, yty_vec, eta0, V0, nu0, psi0, L, return_posterior = FALSE) {
-    .Call(`_BETS_marginal_likelihood_rb`, XtX_cube, Xty_mat, yty_vec, eta0, V0, nu0, psi0, L, return_posterior)
+    .Call(`_BayesETS_marginal_likelihood_rb`, XtX_cube, Xty_mat, yty_vec, eta0, V0, nu0, psi0, L, return_posterior)
 }
 

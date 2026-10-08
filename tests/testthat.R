@@ -7,6 +7,6 @@
 # * https://testthat.r-lib.org/articles/special-files.html
 
 library(testthat)
-library(BETS)
+library(BayesETS)
 
-test_check("BETS")
+test_check("BayesETS")

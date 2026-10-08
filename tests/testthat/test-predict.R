@@ -151,9 +151,9 @@ test_that("print.bets_forecast() prints a table of forecasts and intervals", {
 })
 
 test_that("time_labels() gives months, quarters and years", {
-  expect_identical(BETS:::time_labels(ts(1:3, start = c(2020, 11), frequency = 12)),
+  expect_identical(time_labels(ts(1:3, start = c(2020, 11), frequency = 12)),
                    c("Nov 2020", "Dec 2020", "Jan 2021"))
-  expect_identical(BETS:::time_labels(ts(1:2, start = c(2020, 4), frequency = 4)),
+  expect_identical(time_labels(ts(1:2, start = c(2020, 4), frequency = 4)),
                    c("2020 Q4", "2021 Q1"))
-  expect_identical(BETS:::time_labels(ts(1:2, start = 1999)), c("1999", "2000"))
+  expect_identical(time_labels(ts(1:2, start = 1999)), c("1999", "2000"))
 })

@@ -1,6 +1,6 @@
-Package: BETS
+Package: BayesETS
 Type: Package
-Title: Bayesian ETS Models with Adaptive Importance Sampling
+Title: Forecasting using Bayesian ETS
 Version: 0.1.0
 Authors@R: c(
     person(
@@ -9,22 +9,32 @@ Authors@R: c(
       role = c("aut", "cre")
     )
   )
-Description: Fits Bayesian additive-error ETS state space models using adaptive
-    importance sampling and supports model combination via Bayesian model
-    averaging or stacking, with forecast generation via predict().
+Description: Bayesian exponential smoothing (ETS) state space models for
+    univariate time series, accounting for both parameter and model
+    uncertainty. The initial states and the error variance are integrated out
+    analytically, under a conjugate Normal-inverse-chi-squared prior; the
+    smoothing parameters are integrated numerically, by adaptive Gauss-Hermite
+    quadrature (AGHQ) or adaptive importance sampling (AIS). 
+    The ETS models are combined by Bayesian model averaging (BMA), and forecasts are obtained 
+    by simulating future sample paths. 
+    Currently only additive models are supported.
 License: GPL-3
+URL: https://github.com/LorenzoZambon/BETS
+BugReports: https://github.com/LorenzoZambon/BETS/issues
 Encoding: UTF-8
 LazyData: true
-Imports: 
+Imports:
   Rcpp (>= 1.1.0),
   qrng,
-  statmod
-LinkingTo: 
+  statmod,
+  stats,
+  utils
+LinkingTo:
   Rcpp,
   RcppArmadillo
 Roxygen: list(markdown = TRUE)
-Suggests: 
+Suggests:
     testthat (>= 3.0.0),
     covr
 Config/testthat/edition: 3
-Config/roxygen2/version: 8.0.0
+Config/roxygen2/version: 8.1.0

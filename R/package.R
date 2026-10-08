@@ -1,13 +1,9 @@
-#' BETS package
-#'
-#' Bayesian ETS models.
-#'
 #' @keywords internal
 #' @importFrom Rcpp evalCpp
 #' @importFrom stats predict fitted residuals
 #' @importFrom qrng sobol
 #' @importFrom statmod gauss.quad
-#' @useDynLib BETS, .registration = TRUE
+#' @useDynLib BayesETS, .registration = TRUE
 "_PACKAGE"
 
 ################################################################################

@@ -8,7 +8,7 @@
 # Simulate an additive ETS series with the components of `code`.
 sim_ets <- function(code, freq, seed) {
   set.seed(seed)
-  mc <- BETS:::coerce_model_components(code, freq)[[1]]
+  mc <- coerce_model_components(code, freq)[[1]]
   trend  <- mc[[2]] == "A"
   seas   <- mc[[3]] == "A"
   damped <- mc[[4]] == "TRUE"
@@ -37,9 +37,9 @@ sim_ets <- function(code, freq, seed) {
 # Fit a single model specification through fit_bets_models() (default psi0, as in bets()).
 fit_single <- function(y, code, control, integration = "ais") {
   freq <- stats::frequency(y)
-  ctrl <- BETS:::resolve_bets_control(control)
-  ctrl$psi0 <- BETS:::default_psi0(y)
-  BETS:::fit_bets_models(y, BETS:::coerce_model_components(code, freq), ctrl,
+  ctrl <- resolve_bets_control(control)
+  ctrl$psi0 <- default_psi0(y)
+  fit_bets_models(y, coerce_model_components(code, freq), ctrl,
                          integration = integration)$results[[1]]
 }
 
@@ -84,8 +84,8 @@ test_that("quadrature agrees with AIS where it is the default (d <= 2)", {
   # "auto" uses quadrature only for d <= 2 (biased for d >= 3)
   skip_on_cran()
   for (s in agreement_series) {
-    mc <- BETS:::coerce_model_components(s$code, stats::frequency(s$y))[[1]]
-    if (BETS:::resolve_integration("auto", mc) != "quadrature") next
+    mc <- coerce_model_components(s$code, stats::frequency(s$y))[[1]]
+    if (resolve_integration("auto", mc) != "quadrature") next
     res_ais  <- ais_reference(s)
     set.seed(s$seed)
     res_quad <- fit_single(s$y, s$code, default_ctrl, integration = "quadrature")
@@ -147,7 +147,7 @@ test_that("80% and 95% forecast quantiles agree with the reference within Monte 
     set.seed(1)
     fit_ais  <- bets(y, control = list(integration = "ais", N_final = 4000L,
                                        N_draw = 4096L, min_ess = 2048))
-    traj_ais <- BETS:::simulate_future_trajectories(fit_ais$fit, h = h, n_traj = n_traj)
+    traj_ais <- simulate_future_trajectories(fit_ais$fit, h = h, n_traj = n_traj)
 
     for (method in c("auto", "quadrature", "ais")) {
       set.seed(1)

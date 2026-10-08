@@ -192,7 +192,7 @@ test_that("bets() stores the psi0 used, and keeps control as given", {
   set.seed(1)
   y <- ts(cumsum(rnorm(30)))
   fit <- bets(y, model = "ANN")
-  expect_equal(fit$psi0, BETS:::default_psi0(y))
+  expect_equal(fit$psi0, default_psi0(y))
   expect_null(fit$control$psi0)
   fit <- bets(y, model = "ANN", control = list(psi0 = 2))
   expect_equal(fit$psi0, 2)

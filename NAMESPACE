@@ -14,4 +14,4 @@ importFrom(stats,
   predict,
   residuals
 )
-useDynLib(BETS, .registration = TRUE)
+useDynLib(BayesETS, .registration = TRUE)
