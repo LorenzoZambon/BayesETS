@@ -25,9 +25,10 @@ currently supported.}
 
 \item{additive.only}{Logical; only \code{TRUE} (default) is currently supported.}
 
-\item{verbose}{\code{0} (default) prints nothing, \code{1} prints the model weights,
-\code{2} also prints the progress of each fit. \code{TRUE}/\code{FALSE} are accepted as
-\code{1}/\code{0}.}
+\item{verbose}{\code{0} (default) prints nothing,
+\code{1} prints the model weights,
+\code{2} also prints the progress of each fit.
+\code{TRUE}/\code{FALSE} are accepted as \code{1}/\code{0}.}
 
 \item{control}{Named list of tuning parameters, see \strong{Details}. Missing
 entries take their default values.}
@@ -39,11 +40,14 @@ each model and their weights (\code{fit}), the models (\code{model_components}),
 the \code{call}.
 }
 \description{
-Fits several ETS models and combines them into a single predictive
-distribution, by Bayesian Model Averaging (BMA).
-The smoothing parameters are integrated by adaptive Gauss-Hermite quadrature
-or adaptive importance sampling (AIS); the initial states and the error
-variance are integrated analytically.
+Several ETS models are estimated separately in a Bayesian framework;
+a posterior distribution is obtained for the parameters of each model.
+The smoothing parameters are integrated by adaptive Gauss-Hermite quadrature (AGHQ)
+or adaptive importance sampling (AIS);
+the initial states and the error variance are integrated analytically.
+Then the models are combined into a single predictive
+distribution via Bayesian Model Averaging (BMA).
+In this way, both parameter and model uncertainty are accounted for.
 Currently only additive-error models are supported.
 }
 \details{
@@ -60,28 +64,26 @@ An ETS code must have 3 or 4 characters; the possible values for each component 
 \code{"Ad"}: additive damped,
 \code{"M"}: multiplicative,
 \code{"Md"}: multiplicative damped,
-\code{"Z"}: all supported options for the component.
+\code{"Z"}: all supported options for that component.
 }
 
 \subsection{Integration methods}{
 
-Both methods start from the posterior mode of the (unconstrained) smoothing
-parameters and the inverse Hessian there. Quadrature uses a Gauss-Hermite
-grid scaled by the inverse Hessian. AIS samples a Student-t proposal with
-randomised Sobol points, and adapts it until the effective sample size
-reaches \code{min_ess}. By default (\code{integration = "auto"}), quadrature is used
+Both methods start from the posterior mode of the smoothing
+parameters (mapped to unconstrained space) and the inverse Hessian there.
+Quadrature uses a Gauss-Hermite grid scaled by the inverse Hessian.
+AIS samples a Student-t proposal and adapts it until the effective sample size (ESS)
+reaches \code{min_ess}.
+By default (\code{integration = "auto"}), quadrature is used
 for models with up to 2 smoothing parameters (ANN, AAN, ANA) and AIS for
 the others (AAdN, AAA, AAdA).
 }
 
 \subsection{Seasonal period}{
 
-The seasonal period is \code{frequency(y)}, with the rules of \code{forecast::ets()}:
-a frequency below 1 counts as 1, and a non-integer frequency (e.g. weekly
-data) allows only non-seasonal models, both with a warning. Seasonal models
-also require a period of at most 24 and more than one full period of data.
-With \code{model = "ZZZ"}, seasonal models are dropped when these conditions do
-not hold; requesting one explicitly is an error.
+The seasonal period is \code{frequency(y)}.
+Seasonal models need an integer period between 2 and 24, and more than one full period of observations;
+otherwise, only non-seasonal models can be fitted.
 }
 
 \subsection{Constant series}{
@@ -99,8 +101,8 @@ Entries indexed by \code{d} have one value per number of smoothing parameters
 
 Integration:
 \itemize{
-\item \code{integration}: \code{"auto"} (default), \code{"quadrature"} or \code{"ais"}, to use one
-method for all models. Quadrature is not recommended for models with 3 or
+\item \code{integration}: \code{"auto"} (default), \code{"quadrature"} or \code{"ais"}.
+Quadrature is not recommended for models with 3 or
 more smoothing parameters.
 \item \code{n_scan}: number of prior points evaluated to start the search of the
 posterior mode. Default 64.
@@ -122,14 +124,14 @@ Default \code{c(21, 21, 9, 7)}.
 
 Priors:
 \itemize{
-\item \code{nu0}, \code{psi0}: prior of the error variance \eqn{\sigma^2}, a scaled
-inverse chi-squared with \code{nu0} degrees of freedom (default 3, must be
-greater than 2) and mean \code{psi0 / (nu0 - 2)}. By default, \code{psi0} is the
+\item \code{nu0}, \code{psi0}: parameters of the prior of the error variance \eqn{\sigma^2},
+a scaled inverse chi-squared with \code{nu0} degrees of freedom (default 3, must be >2)
+and mean \code{psi0 / (nu0 - 2)}. By default, \code{psi0} is the
 residual variance of the naive or seasonal naive forecasts.
 \item \code{c_inflate_eta}: inflation factor of the prior covariance of the initial
 states, which is set by a heuristic (default 3).
-\item \code{phi_min}, \code{phi_max}: range of the damping parameter (default 0.8 and
-0.98). All smoothing parameters have uniform priors.
+\item \code{phi_min}, \code{phi_max}: range of the damping parameter (default 0.8 and 0.98).
+All smoothing parameters have uniform priors.
 \item \code{prior_models}: prior model probabilities for BMA, one per model.
 Default: equal.
 }

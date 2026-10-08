@@ -186,6 +186,18 @@ test_that("print.bets() runs without error and prints header and call", {
   fit <- bets(ts(rnorm(20)), model = "ANN")
   expect_output(print(fit), "BETS model fit")
   expect_output(print(fit), "call: bets\\(y = ts\\(rnorm\\(20\\)\\), model = \"ANN\"\\)")
+  expect_false(any(grepl("Posterior probability", capture.output(print(fit)))))   # one model
+})
+
+test_that("print.bets() shows posterior means, negligible models and component probabilities", {
+  set.seed(1)
+  fit <- bets(ts(rnorm(30)), model = c("ANN", "AAN"), control = list(prior_models = c(1, 0)))
+  out <- capture.output(print(fit))
+  expect_true(any(grepl("^  model +weight +alpha +sigma$", out)))
+  alpha <- sprintf("%.3f", mean(fit$fit$results[[1]]$thetas[, "alpha"]))
+  expect_true(any(grepl(paste0("^  ANN +1\\.000 +", alpha, " "), out)))
+  expect_true(any(grepl("(weight < 0.001: AAN)", out, fixed = TRUE)))
+  expect_true(any(grepl("Posterior probability of: trend 0.00", out, fixed = TRUE)))
 })
 
 test_that("bets() stores the psi0 used, and keeps control as given", {

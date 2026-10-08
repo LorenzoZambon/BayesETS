@@ -7,6 +7,7 @@
 #' the initial states and the error variance are integrated analytically.
 #' Then the models are combined into a single predictive
 #' distribution via Bayesian Model Averaging (BMA).
+#' In this way, both parameter and model uncertainty are accounted for.
 #' Currently only additive-error models are supported.
 #'
 #' @param y Univariate time series.
@@ -216,12 +217,50 @@ print.bets <- function(x, ...) {
   print_comb <- ifelse(x$fit$combination == "bma", "Bayesian Model Averaging", "Stacking")
   cat(sprintf("  combination: %s\n", print_comb))
 
+  # Models with weight >= 0.001, by decreasing weight; the others in one line
   mc <- x$model_components
+  w <- x$fit$model_weights
   labels <- vapply(mc, ets_label, character(1))
-  integration <- vapply(x$fit$results, `[[`, character(1), "integration")
-  cat("\n  Models and weights:\n")
-  for (i in seq_along(labels)) {
-    cat(sprintf("  %-5s weight: %.3f  (%s)\n", labels[i], x$fit$model_weights[i], integration[i]))
+  shown <- order(w, decreasing = TRUE)
+  shown <- shown[w[shown] >= 0.001]
+  tab <- posterior_means_table(x$fit$results[shown], labels[shown], w[shown])
+  tab <- rbind(colnames(tab), tab)
+  width <- apply(nchar(tab), 2, max)
+  cat("\n  Model weights and posterior means of the parameters:\n")
+  for (i in seq_len(nrow(tab))) {
+    cells <- c(sprintf("%-*s", width[1], tab[i, 1]), sprintf("%*s", width[-1], tab[i, -1]))
+    cat("  ", paste(cells, collapse = "  "), "\n", sep = "")
+  }
+  hidden <- setdiff(seq_along(w), shown)
+  if (length(hidden) > 0) {
+    cat(sprintf("  (weight < 0.001: %s)\n", paste(labels[hidden], collapse = ", ")))
+  }
+
+  # BMA: posterior probability of each component present in some models only
+  if (x$fit$combination == "bma") {
+    has <- list(trend          = vapply(mc, `[[`, character(1), 2) != "N",
+                `damped trend` = vapply(mc, `[[`, character(1), 4) == "TRUE",
+                seasonality    = vapply(mc, `[[`, character(1), 3) != "N")
+    has <- Filter(function(h) any(h) && !all(h), has)
+    if (length(has) > 0) {
+      probs <- vapply(has, function(h) sum(w[h]), numeric(1))
+      cat(sprintf("\n  Posterior probability of %s\n",
+                  paste(sprintf("%s: %.2f", names(probs), probs), collapse = ", ")))
+    }
   }
   invisible(x)
+}
+
+# Models (rows) with their weight and the posterior means of the smoothing
+# parameters and of sigma ("-" if not in the model), as a character matrix
+posterior_means_table <- function(results, labels, weights) {
+  means <- lapply(results, function(r) colMeans(r$thetas))
+  pars <- intersect(c("alpha", "beta", "phi", "gamma"), unlist(lapply(means, names)))
+  par_cols <- lapply(pars, function(p) {
+    vapply(means, function(m) if (p %in% names(m)) sprintf("%.3f", m[[p]]) else "-", character(1))
+  })
+  sigma <- vapply(results, function(r) mean(sqrt(r$sigma2s)), numeric(1))
+  tab <- cbind(labels, sprintf("%.3f", weights), do.call(cbind, par_cols), format(signif(sigma, 4)))
+  colnames(tab) <- c("model", "weight", pars, "sigma")
+  tab
 }
