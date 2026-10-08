@@ -28,7 +28,7 @@ fit_bets_models <- function(y,
   fit_time_per_model <- numeric(n_models)
 
   for (i in seq_along(model_components)) {
-    if (verbose >= 2) cat(sprintf("\nFitting model %d of %d\n", i, n_models))
+    if (verbose >= 2) cat(sprintf("\n\nFitting model %d of %d\n", i, n_models))
     t0 <- proc.time()[3]
 
     integration_i <- resolve_integration(integration, model_components[[i]])
@@ -66,6 +66,7 @@ fit_bets_models <- function(y,
   }
 
   if (verbose >= 1) {
+    cat("\nModel Weights:\n")
     labels <- vapply(model_components, ets_label, character(1))
     for (i in seq_along(labels)) {
       cat(sprintf("  %-5s: %.3f\n", labels[i], model_weights[i]))
@@ -175,7 +176,7 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
   log_lik_pointwise <- NULL
   if (return_pointwise) {
     # In-sample residuals, for stacking
-    E <- RSS_vect_arma(yR = as.numeric(y), trend = flags$trend, seas = flags$seas,
+    E <- ets_residuals(yR = as.numeric(y), trend = flags$trend, seas = flags$seas,
                        damped = flags$damped, m = m, init_statesR = etas,
                        paramsR = thetas, return_residuals = TRUE)$residuals
     sd_mat <- matrix(sqrt(sigma2s), nrow = nrow(E), ncol = ncol(E), byrow = FALSE)
@@ -192,7 +193,7 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
 }
 
 # Fit of a constant series with ETS(A,N,N).
-# The posterior is simple: since residuals are all zero, alpha keeps its prior, 
+# The posterior is simple: since residuals are all zero, alpha keeps its prior,
 # the final level is the constant and \sigma^2 is driven by its prior only.
 fit_constant_series <- function(y, ctrl, combination) {
   level <- as.numeric(y[1])
@@ -211,19 +212,15 @@ fit_constant_series <- function(y, ctrl, combination) {
        fit_time_per_model = 0, elapsed_combination = 0)
 }
 
-# Integration method of a model: 
+# Integration method of a model:
 # with "auto", quadrature for up to 2 smoothing parameters, AIS otherwise
 resolve_integration <- function(integration, model_components) {
   if (integration != "auto") return(integration)
   if (length(theta_names_of(model_components)) <= 2) "quadrature" else "ais"
 }
 
-#' Stacking weights
-#'
-#' @param log_lik_list List with one matrix of pointwise log-likelihoods
-#'   (draws x time) per model.
-#' @return Vector of stacking weights.
-#' @keywords internal
+# Stacking weights, from a list with one matrix of pointwise log-likelihoods
+# (draws x time) per model
 compute_stacking_weights <- function(log_lik_list) {
   K <- length(log_lik_list)
   if (K == 0) stop("log_lik_list is empty")

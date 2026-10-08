@@ -71,7 +71,7 @@ one_step_residuals <- function(object, type, n_draws) {
     }
     flags <- model_flags(r$model_components)
     m <- max(1L, sum(grepl("^s\\d+$", colnames(r$etas))))   # seasonal period
-    E <- RSS_vect_arma(y, flags$trend, flags$seas, flags$damped, m,
+    E <- ets_residuals(y, flags$trend, flags$seas, flags$damped, m,
                        r$etas[idx, , drop = FALSE], r$thetas[idx, , drop = FALSE],
                        return_residuals = TRUE)$residuals
     if (type == "mean") w[k] * colMeans(E) else E

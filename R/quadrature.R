@@ -14,9 +14,9 @@ integrate_quadrature <- function(log_g_fn, z_start, theta_names, ctrl,
   quad <- adaptive_gh_quadrature(log_g_fn, z_start, n_quad, log_g_mode = log_g_mode)
 
   if (isTRUE(ctrl$verbose >= 2)) {
-    cat(sprintf("\n\nRB Gauss-Hermite quadrature: %d nodes (%d per dimension)\n",
+    cat(sprintf("RB Gauss-Hermite quadrature: %d nodes (%d per dimension)",
                 nrow(quad$G), n_quad))
-    cat(sprintf("\n log evidence = %.4f\n", quad$log_evidence))
+    cat(sprintf("\nlog evidence = %.4f\n", quad$log_evidence))
   }
 
   list(

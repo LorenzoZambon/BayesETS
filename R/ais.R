@@ -86,8 +86,8 @@ adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
     ess <- 1 / sum(w^2)
 
     if (isTRUE(verbose >= 2)) {
-      cat(sprintf("\n\nRao-Blackwellized AIS - iter %d\n", iter))
-      cat(sprintf("\n ESS = %.1f\n", ess))
+      cat(sprintf("Adaptive Importance Sampling - iteration %d", iter))
+      cat(sprintf("\nESS = %.1f\n", ess))
     }
     if (ess >= min_ess || iter == n_iter_max) break
 

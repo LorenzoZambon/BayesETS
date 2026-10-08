@@ -113,15 +113,9 @@ time_labels <- function(x) {
   }
 }
 
-#' Future trajectories of the model combination
-#'
-#' Each model contributes a number of trajectories proportional to its weight.
-#'
-#' @param bets_fit The `fit` element of a `bets` object.
-#' @param h Forecast horizon.
-#' @param n_traj Number of trajectories.
-#' @return Matrix of trajectories (n_traj x h).
-#' @keywords internal
+# Future trajectories (n_traj x h) of the model combination, from the fit
+# element of a bets object: each model contributes a number of trajectories
+# proportional to its weight
 simulate_future_trajectories <- function(bets_fit, h = 10, n_traj = 1000) {
   n_models <- length(bets_fit$results)
   model_weights <- bets_fit$model_weights

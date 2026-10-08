@@ -105,7 +105,7 @@ test_that("final states from the affine maps of the C++ kernel match the recursi
     flags <- model_flags(mc)
     set.seed(2)
     res <- fit_one_model(y, mc, ctrl, "ais")
-    rss <- RSS_vect_arma(as.numeric(y), flags$trend, flags$seas, flags$damped, 4,
+    rss <- ets_residuals(as.numeric(y), flags$trend, flags$seas, flags$damped, 4,
                                 res$etas, res$thetas)
     expect_equal(unname(res$states), unname(rss$states), tolerance = 1e-8, info = code)
   }

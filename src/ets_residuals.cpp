@@ -7,7 +7,7 @@ using namespace arma;
 // One-step residuals, RSS and final states of the additive ETS model, for each
 // row of params and init_states (l, [b,] s1, ..., s_m)
 // [[Rcpp::export]]
-List RSS_vect_arma(NumericVector yR,
+List ets_residuals(NumericVector yR,
                    bool trend,
                    bool seas,
                    bool damped,

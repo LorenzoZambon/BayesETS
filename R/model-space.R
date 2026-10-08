@@ -34,11 +34,7 @@ n_states <- function(model_components, m) {
   1L + flags$trend + (if (flags$seas) m else 0L)
 }
 
-#' Label of an ETS model (e.g. "AAdN")
-#'
-#' @param model_components Vector (error, trend, season, damped).
-#' @return Character string.
-#' @keywords internal
+# Label of an ETS model (e.g. "AAdN"), from c(error, trend, season, damped)
 ets_label <- function(model_components) {
   d <- if (model_components[[4]] == "TRUE") "d" else ""
   paste0(model_components[[1]], model_components[[2]], d, model_components[[3]])

@@ -12,9 +12,9 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
-// RSS_vect_arma
-List RSS_vect_arma(NumericVector yR, bool trend, bool seas, bool damped, int m, NumericMatrix init_statesR, NumericMatrix paramsR, bool return_residuals);
-RcppExport SEXP _BayesETS_RSS_vect_arma(SEXP yRSEXP, SEXP trendSEXP, SEXP seasSEXP, SEXP dampedSEXP, SEXP mSEXP, SEXP init_statesRSEXP, SEXP paramsRSEXP, SEXP return_residualsSEXP) {
+// ets_residuals
+List ets_residuals(NumericVector yR, bool trend, bool seas, bool damped, int m, NumericMatrix init_statesR, NumericMatrix paramsR, bool return_residuals);
+RcppExport SEXP _BayesETS_ets_residuals(SEXP yRSEXP, SEXP trendSEXP, SEXP seasSEXP, SEXP dampedSEXP, SEXP mSEXP, SEXP init_statesRSEXP, SEXP paramsRSEXP, SEXP return_residualsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -26,7 +26,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericMatrix >::type init_statesR(init_statesRSEXP);
     Rcpp::traits::input_parameter< NumericMatrix >::type paramsR(paramsRSEXP);
     Rcpp::traits::input_parameter< bool >::type return_residuals(return_residualsSEXP);
-    rcpp_result_gen = Rcpp::wrap(RSS_vect_arma(yR, trend, seas, damped, m, init_statesR, paramsR, return_residuals));
+    rcpp_result_gen = Rcpp::wrap(ets_residuals(yR, trend, seas, damped, m, init_statesR, paramsR, return_residuals));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -82,7 +82,7 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_BayesETS_RSS_vect_arma", (DL_FUNC) &_BayesETS_RSS_vect_arma, 8},
+    {"_BayesETS_ets_residuals", (DL_FUNC) &_BayesETS_ets_residuals, 8},
     {"_BayesETS_build_design_and_c_batch", (DL_FUNC) &_BayesETS_build_design_and_c_batch, 7},
     {"_BayesETS_final_states_rb", (DL_FUNC) &_BayesETS_final_states_rb, 4},
     {"_BayesETS_marginal_likelihood_rb", (DL_FUNC) &_BayesETS_marginal_likelihood_rb, 9},
