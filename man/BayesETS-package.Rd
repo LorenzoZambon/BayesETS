@@ -17,11 +17,11 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: Lorenzo Zambon \email{lorenzo.zambon@supsi.ch}
+\strong{Maintainer}: Lorenzo Zambon \email{lorenzo.zambon@supsi.ch} (\href{https://orcid.org/0000-0002-8939-993X}{ORCID})
 
 Authors:
 \itemize{
-  \item Lorenzo Zambon \email{lorenzo.zambon@supsi.ch}
+  \item Lorenzo Zambon \email{lorenzo.zambon@supsi.ch} (\href{https://orcid.org/0000-0002-8939-993X}{ORCID})
 }
 
 }
