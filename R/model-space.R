@@ -1,14 +1,7 @@
-# Value of a control parameter for d smoothing parameters: a scalar applies to
-# all d; from a vector, the element named d or else element d (the last one if
-# the vector is shorter)
+# Value of a control parameter for d smoothing parameters: element d (the last
+# one if the vector is shorter, so a scalar applies to all d)
 resolve_by_d <- function(param, d) {
-  if (length(param) == 1L) return(as.integer(param))
-  if (!is.null(names(param))) {
-    key <- as.character(d)
-    if (key %in% names(param)) return(as.integer(param[[key]]))
-  }
-  idx <- min(as.integer(d), length(param))
-  as.integer(param[[idx]])
+  as.integer(param[[min(as.integer(d), length(param))]])
 }
 
 # Default control parameters. N_draw, N_final and n_quad have one value per

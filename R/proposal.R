@@ -1,8 +1,6 @@
 ################################################################################
 # PARAMETER TRANSFORMATION
 
-inv_logit <- stats::plogis
-
 # Smoothing parameters from the unconstrained ones (matrix theta_unc), with the
 # log-Jacobian of the transformation: list(theta, log_jac)
 transform_unconstrained_to_theta <- function(theta_unc, param_names, phi_min, phi_max) {
@@ -14,28 +12,28 @@ transform_unconstrained_to_theta <- function(theta_unc, param_names, phi_min, ph
 
   # alpha in (0, 1)
   if ("alpha" %in% param_names) {
-    p <- inv_logit(theta_unc[, "alpha"])
+    p <- stats::plogis(theta_unc[, "alpha"])
     theta[, "alpha"] <- p
     log_jac <- log_jac + log(p) + log(1 - p)
   }
 
   # beta in (0, alpha)
   if ("beta" %in% param_names) {
-    p <- inv_logit(theta_unc[, "beta"])
+    p <- stats::plogis(theta_unc[, "beta"])
     theta[, "beta"] <- theta[, "alpha"] * p
     log_jac <- log_jac + log(p) + log(1 - p) + log(theta[, "alpha"])
   }
 
   # gamma in (0, 1 - alpha)
   if ("gamma" %in% param_names) {
-    p <- inv_logit(theta_unc[, "gamma"])
+    p <- stats::plogis(theta_unc[, "gamma"])
     theta[, "gamma"] <- (1 - theta[, "alpha"]) * p
     log_jac <- log_jac + log(p) + log(1 - p) + log(1 - theta[, "alpha"])
   }
 
   # phi in (phi_min, phi_max)
   if ("phi" %in% param_names) {
-    p <- inv_logit(theta_unc[, "phi"])
+    p <- stats::plogis(theta_unc[, "phi"])
     theta[, "phi"] <- p * (phi_max - phi_min) + phi_min
     log_jac <- log_jac + log(p) + log(1 - p) + log(phi_max - phi_min)
   }
@@ -51,8 +49,8 @@ transform_unconstrained_to_theta <- function(theta_unc, param_names, phi_min, ph
 .FB_MULT <- 1e-4     # floor of the prior variances of b and s, relative to l
 
 # Heuristic prior mean and (diagonal) covariance of the initial states
-# (l, b, s1, ..., s_{m-1})
-init_eta_params <- function(y, model_components, eta_df = NULL,
+# (l, b, s1, ..., s_{m-1}); var_*_mult scale the variances (for prior tuning)
+init_eta_params <- function(y, model_components,
                             var_l_mult = 1,
                             var_b_mult = 1,
                             var_s_mult = 1) {
@@ -105,7 +103,7 @@ init_eta_params <- function(y, model_components, eta_df = NULL,
   Sigma <- matrix(0, nrow = length(init_var), ncol = length(init_var))
   diag(Sigma) <- init_var
 
-  list(mus = init_mu, Sigma = Sigma, df = eta_df)
+  list(mus = init_mu, Sigma = Sigma)
 }
 
 ################################################################################
@@ -113,10 +111,7 @@ init_eta_params <- function(y, model_components, eta_df = NULL,
 
 # Simulated future trajectories of an ETS model, one per row of params (with
 # the final states and \sigma^2 of the same posterior draw)
-ets_future_traj <- function(model_components, states, params, sigma2s, h = 10, seed = NULL) {
-
-  if (!is.null(seed)) set.seed(seed)
-
+ets_future_traj <- function(model_components, states, params, sigma2s, h = 10) {
   flags <- model_flags(model_components)
   trend <- flags$trend
   seas <- flags$seas
@@ -168,25 +163,15 @@ ets_future_traj <- function(model_components, states, params, sigma2s, h = 10, s
   forecasts
 }
 
-# Log-density of the uniform prior of the smoothing parameters (constant)
-log_prior_theta_uniform <- function(theta_samp, phi_min, phi_max) {
-  lp <- rep(0, nrow(theta_samp))
-
+# Log-density of the uniform prior of the smoothing parameters (a constant)
+log_prior_theta_uniform <- function(theta_names, phi_min, phi_max) {
   # (alpha, beta, gamma): uniform on a region of volume 1/6 (AAA) or 1/2
   # (AAN, ANA)
-  has_beta  <- "beta" %in% colnames(theta_samp)
-  has_gamma <- "gamma" %in% colnames(theta_samp)
-
-  if (has_beta && has_gamma) {
-    lp <- lp + log(6)
-  } else if (has_beta || has_gamma) {
-    lp <- lp + log(2)
-  }
+  has_beta  <- "beta" %in% theta_names
+  has_gamma <- "gamma" %in% theta_names
+  lp <- if (has_beta && has_gamma) log(6) else if (has_beta || has_gamma) log(2) else 0
 
   # phi: uniform on (phi_min, phi_max)
-  if ("phi" %in% colnames(theta_samp)) {
-    lp <- lp - log(phi_max - phi_min)
-  }
-
+  if ("phi" %in% theta_names) lp <- lp - log(phi_max - phi_min)
   lp
 }

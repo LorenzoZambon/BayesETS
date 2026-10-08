@@ -54,7 +54,6 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
   flags <- model_flags(model_components)
   trend <- flags$trend
   seas <- flags$seas
-  n_theta <- length(theta_names)
 
   eta_init <- init_eta_params(y, model_components)  # l, [b,] [s1, ..., s_{m-1}]
 
@@ -107,16 +106,12 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
     V0 <- Sigma_full / prior_mean_sigma2
   }
 
-  # Uniform prior of the smoothing parameters: constant log-density
-  dummy_theta <- matrix(0, nrow = 1, ncol = n_theta)
-  colnames(dummy_theta) <- theta_names
-  log_prior_theta_const <- log_prior_theta_uniform(dummy_theta, phi_min, phi_max)[1]
+  log_prior_theta_const <- log_prior_theta_uniform(theta_names, phi_min, phi_max)
 
   list(
     eta0 = eta0_cpp,
     V0 = V0,
     psi0 = psi0,
-    n_eta = n_eta,
     log_prior_theta_const = log_prior_theta_const
   )
 }
@@ -234,7 +229,7 @@ adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
 
     # Proposal update
     t0 <- proc.time()[3]
-    proposal <- update_theta_only_proposal(Z, w, proposal, lr = lr)
+    proposal <- update_proposal(Z, w, proposal, lr = lr)
     timing$update <- timing$update + (proc.time()[3] - t0)
   }
 
@@ -291,9 +286,9 @@ bind_ml_res <- function(ml_list) {
 }
 
 # Proposal update by weighted moment matching
-update_theta_only_proposal <- function(theta_unc, w, prev_params,
-                                       lr = 0.9, min_var = 1e-6,
-                                       lambda_shr = 0.1) {
+update_proposal <- function(theta_unc, w, prev_params,
+                            lr = 0.9, min_var = 1e-6,
+                            lambda_shr = 0.1) {
   w <- w / sum(w)
   ess <- 1 / sum(w^2)
 

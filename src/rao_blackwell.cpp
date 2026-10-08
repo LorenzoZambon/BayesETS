@@ -170,9 +170,7 @@ List build_design_and_c_batch(NumericVector yR,
   List out = List::create(
     _["XtX"] = XtX,
     _["Xty"] = Xty,
-    _["yty"] = yty,
-    _["n_eta"] = n_eta,
-    _["L"] = L
+    _["yty"] = yty
   );
   if (return_final) {
     out["final_coef"] = final_coef;
