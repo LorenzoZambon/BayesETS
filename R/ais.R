@@ -40,142 +40,6 @@ integrate_ais <- function(log_g_fn, z_start, theta_names, ctrl,
 
 
 ################################################################################
-# PRIOR AND POSTERIOR DRAWS (shared by quadrature and AIS)
-
-# Prior of the initial states and \sigma^2, and log-density of the uniform
-# prior of the smoothing parameters. eta0 and V0 are in the C++ order.
-init_rb_prior <- function(y, model_components, theta_names, ctrl) {
-  psi0          <- ctrl$psi0
-  phi_min       <- ctrl$phi_min
-  phi_max       <- ctrl$phi_max
-  c_inflate_eta <- ctrl$c_inflate_eta
-
-  m <- stats::frequency(y)
-  flags <- model_flags(model_components)
-  trend <- flags$trend
-  seas <- flags$seas
-
-  eta_init <- init_eta_params(y, model_components)  # l, [b,] [s1, ..., s_{m-1}]
-
-  # eta also includes the last seasonal state: (l0, [b0,] [s1, ..., s_m])
-  n_eta <- n_states(model_components, m)
-
-  # Prior mean of s_m: -(s1 + ... + s_{m-1})
-  eta0_free <- eta_init$mus
-  if (seas && m > 1) {
-    s_free_names <- grep("^s\\d+$", names(eta0_free), value = TRUE)
-    last_s <- -sum(eta0_free[s_free_names])
-    eta0_r_order <- c(eta0_free, last_s)
-    names(eta0_r_order)[length(eta0_r_order)] <- paste0("s", m)
-  } else {
-    eta0_r_order <- eta0_free
-  }
-
-  # eta | \sigma^2 ~ N(eta0, \sigma^2 V0), with V0 = Sigma / E[\sigma^2]: prior
-  # covariance Sigma at the prior mean of \sigma^2
-  Sigma_heuristic_free <- eta_init$Sigma * c_inflate_eta
-  prior_mean_sigma2 <- psi0 / (ctrl$nu0 - 2)
-
-  # Independent priors on all m seasonal states, without the sum-to-zero
-  # constraint: the prior fixes the shift (l0 + c, s - c) that the data cannot
-  # identify, and keeps V0 invertible
-  if (seas && m > 1) {
-    n_free <- length(eta0_free)
-    n_full <- n_eta
-    s_indices_free <- grep("^s\\d+$", names(eta0_free))
-    Sigma_full <- matrix(0, n_full, n_full)
-    Sigma_full[1:n_free, 1:n_free] <- Sigma_heuristic_free
-    # s_m: same prior variance as the other seasonal states
-    Sigma_full[n_full, n_full] <- mean(diag(Sigma_heuristic_free)[s_indices_free])
-  } else {
-    Sigma_full <- Sigma_heuristic_free
-  }
-
-  # C++ order of the seasonal states: (s_m, ..., s1)
-  if (seas && m > 1) {
-    s_offset_r <- (1 + (if (trend) 1L else 0L))  # number of non-seasonal states
-    non_s_idx <- seq_len(s_offset_r)
-    s_idx_r <- (s_offset_r + 1):(s_offset_r + m)  # s1, ..., s_m
-    s_idx_cpp <- rev(s_idx_r)                     # s_m, ..., s1
-    reorder <- c(non_s_idx, s_idx_cpp)
-
-    eta0_cpp <- as.numeric(eta0_r_order[reorder])
-    V0 <- Sigma_full[reorder, reorder, drop = FALSE] / prior_mean_sigma2
-  } else {
-    eta0_cpp <- as.numeric(eta0_r_order)
-    V0 <- Sigma_full / prior_mean_sigma2
-  }
-
-  log_prior_theta_const <- log_prior_theta_uniform(theta_names, phi_min, phi_max)
-
-  list(
-    eta0 = eta0_cpp,
-    V0 = V0,
-    psi0 = psi0,
-    log_prior_theta_const = log_prior_theta_const
-  )
-}
-
-# Posterior draws: resampling of the weighted particles, then \sigma^2 and eta
-# from their conditional posteriors, and the final states. ml_res: as returned
-# by make_log_g_rb() at the particles.
-draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
-                              N_final, nu0, return_pointwise = FALSE) {
-  L <- length(y)
-  m <- stats::frequency(y)
-  flags <- model_flags(model_components)
-  n_eta <- n_states(model_components, m)
-  N_particles <- nrow(theta_particles)
-
-  res_idx <- sample(N_particles, size = N_final, replace = TRUE, prob = w)
-  thetas <- theta_particles[res_idx, , drop = FALSE]
-
-  posterior_scale <- as.numeric(ml_res$posterior_scale)
-  nu_n <- nu0 + L
-
-  sigma2s <- posterior_scale[res_idx] / stats::rchisq(N_final, df = nu_n)
-
-  # eta ~ N(mu_n, \sigma^2 V_n), with V_n = t(Rn) Rn; all draws at once
-  # (column j of Z: standard normals of draw j)
-  Z <- matrix(stats::rnorm(n_eta * N_final), nrow = n_eta, ncol = N_final)
-  Rn_draws <- ml_res$Rn[, , res_idx, drop = FALSE]
-  Z_draws  <- array(Z[, rep(seq_len(N_final), each = n_eta)], dim = c(n_eta, n_eta, N_final))
-  eta_cpp <- ml_res$mu_n[, res_idx, drop = FALSE] +
-    sweep(colSums(Rn_draws * Z_draws), 2, sqrt(sigma2s), "*")   # n_eta x N_final
-
-  # Final states: affine functions of eta (C++)
-  states <- t(final_states_rb(ml_res$final_coef, ml_res$final_const, eta_cpp,
-                              as.integer(res_idx)))
-
-  # Initial states from the C++ order (l, [b,] s_m, ..., s1) to the R order
-  # (l, [b,] s1, ..., s_m); in the final states s1 is the next one used
-  state_names <- c("l", if (flags$trend) "b", if (flags$seas) paste0("s", seq_len(m)))
-  etas <- t(eta_cpp)
-  colnames(etas) <- c("l", if (flags$trend) "b", if (flags$seas) paste0("s", rev(seq_len(m))))
-  etas <- etas[, state_names, drop = FALSE]
-  colnames(states) <- state_names
-
-  log_lik_pointwise <- NULL
-  if (return_pointwise) {
-    # In-sample residuals, for stacking
-    E <- RSS_vect_arma(yR = as.numeric(y), trend = flags$trend, seas = flags$seas,
-                       damped = flags$damped, m = m, init_statesR = etas,
-                       paramsR = thetas, return_residuals = TRUE)$residuals
-    sd_mat <- matrix(sqrt(sigma2s), nrow = nrow(E), ncol = ncol(E), byrow = FALSE)
-    log_lik_pointwise <- stats::dnorm(E, mean = 0, sd = sd_mat, log = TRUE)
-  }
-
-  list(
-    thetas = thetas,
-    etas = etas,
-    states = states,
-    sigma2s = sigma2s,
-    log_lik_pointwise = log_lik_pointwise
-  )
-}
-
-
-################################################################################
 # AIS HELPERS
 
 # AIS of g = exp(log g) on R^d (log_g_fn, z_start, log_g_mode as in
@@ -307,4 +171,14 @@ update_proposal <- function(theta_unc, w, prev_params,
   out_Sigma <- lamb * Sigma_new + (1 - lamb) * prev_params$Sigma
 
   list(mus = out_mus, Sigma = out_Sigma, df = prev_params$df)
+}
+
+# Log-density of a multivariate t, given the upper Cholesky factor of the scale
+ldmvt_chol <- function(devs, chol_R, df) {
+  d           <- ncol(devs)
+  z           <- forwardsolve(t(chol_R), t(devs))
+  mahal       <- colSums(z^2)
+  log_det_R   <- sum(log(diag(chol_R)))
+  log_const   <- lgamma((df + d) / 2) - lgamma(df / 2) - (d / 2) * log(df * pi) - log_det_R
+  log_const - ((df + d) / 2) * log(1 + mahal / df)
 }

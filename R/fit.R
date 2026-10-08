@@ -1,11 +1,3 @@
-#' @keywords internal
-#' @importFrom Rcpp evalCpp
-#' @importFrom stats predict fitted residuals
-#' @importFrom qrng sobol
-#' @importFrom statmod gauss.quad
-#' @useDynLib BayesETS, .registration = TRUE
-"_PACKAGE"
-
 ################################################################################
 # MODEL FITTING
 
@@ -141,6 +133,64 @@ fit_one_model <- function(y, model_components, ctrl, integration,
   )
 }
 
+# Posterior draws: resampling of the weighted particles, then \sigma^2 and eta
+# from their conditional posteriors, and the final states. ml_res: as returned
+# by make_log_g_rb() at the particles.
+draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
+                              N_final, nu0, return_pointwise = FALSE) {
+  L <- length(y)
+  m <- stats::frequency(y)
+  flags <- model_flags(model_components)
+  n_eta <- n_states(model_components, m)
+  N_particles <- nrow(theta_particles)
+
+  res_idx <- sample(N_particles, size = N_final, replace = TRUE, prob = w)
+  thetas <- theta_particles[res_idx, , drop = FALSE]
+
+  posterior_scale <- as.numeric(ml_res$posterior_scale)
+  nu_n <- nu0 + L
+
+  sigma2s <- posterior_scale[res_idx] / stats::rchisq(N_final, df = nu_n)
+
+  # eta ~ N(mu_n, \sigma^2 V_n), with V_n = t(Rn) Rn; all draws at once
+  # (column j of Z: standard normals of draw j)
+  Z <- matrix(stats::rnorm(n_eta * N_final), nrow = n_eta, ncol = N_final)
+  Rn_draws <- ml_res$Rn[, , res_idx, drop = FALSE]
+  Z_draws  <- array(Z[, rep(seq_len(N_final), each = n_eta)], dim = c(n_eta, n_eta, N_final))
+  eta_cpp <- ml_res$mu_n[, res_idx, drop = FALSE] +
+    sweep(colSums(Rn_draws * Z_draws), 2, sqrt(sigma2s), "*")   # n_eta x N_final
+
+  # Final states: affine functions of eta (C++)
+  states <- t(final_states_rb(ml_res$final_coef, ml_res$final_const, eta_cpp,
+                              as.integer(res_idx)))
+
+  # Initial states from the C++ order (l, [b,] s_m, ..., s1) to the R order
+  # (l, [b,] s1, ..., s_m); in the final states s1 is the next one used
+  state_names <- c("l", if (flags$trend) "b", if (flags$seas) paste0("s", seq_len(m)))
+  etas <- t(eta_cpp)
+  colnames(etas) <- c("l", if (flags$trend) "b", if (flags$seas) paste0("s", rev(seq_len(m))))
+  etas <- etas[, state_names, drop = FALSE]
+  colnames(states) <- state_names
+
+  log_lik_pointwise <- NULL
+  if (return_pointwise) {
+    # In-sample residuals, for stacking
+    E <- RSS_vect_arma(yR = as.numeric(y), trend = flags$trend, seas = flags$seas,
+                       damped = flags$damped, m = m, init_statesR = etas,
+                       paramsR = thetas, return_residuals = TRUE)$residuals
+    sd_mat <- matrix(sqrt(sigma2s), nrow = nrow(E), ncol = ncol(E), byrow = FALSE)
+    log_lik_pointwise <- stats::dnorm(E, mean = 0, sd = sd_mat, log = TRUE)
+  }
+
+  list(
+    thetas = thetas,
+    etas = etas,
+    states = states,
+    sigma2s = sigma2s,
+    log_lik_pointwise = log_lik_pointwise
+  )
+}
+
 # Fit of a constant series with ETS(A,N,N).
 # The posterior is simple: since residuals are all zero, alpha keeps its prior, 
 # the final level is the constant and \sigma^2 is driven by its prior only.
@@ -161,19 +211,55 @@ fit_constant_series <- function(y, ctrl, combination) {
        fit_time_per_model = 0, elapsed_combination = 0)
 }
 
-# Default psi0: variance of the naive or (if smaller) of the seasonal naive residuals,
-# floored to stay positive for deterministic series; heuristic for constant series.
-default_psi0 <- function(y) {
-  if (all(y == y[1])) return((0.2 * (if (y[1] != 0) abs(y[1]) else 1))^2)
-  m <- stats::frequency(y)
-  psi0 <- stats::var(diff(y))
-  if (m > 1) psi0 <- min(psi0, stats::var(diff(y, lag = m)), na.rm = TRUE)
-  max(psi0, 1e-8 * stats::var(y))
-}
-
 # Integration method of a model: 
 # with "auto", quadrature for up to 2 smoothing parameters, AIS otherwise
 resolve_integration <- function(integration, model_components) {
   if (integration != "auto") return(integration)
   if (length(theta_names_of(model_components)) <= 2) "quadrature" else "ais"
+}
+
+#' Stacking weights
+#'
+#' @param log_lik_list List with one matrix of pointwise log-likelihoods
+#'   (draws x time) per model.
+#' @return Vector of stacking weights.
+#' @keywords internal
+compute_stacking_weights <- function(log_lik_list) {
+  K <- length(log_lik_list)
+  if (K == 0) stop("log_lik_list is empty")
+  if (is.null(log_lik_list[[1]]) || !is.matrix(log_lik_list[[1]])) {
+    stop("Each element of log_lik_list must be a matrix (samples x time)")
+  }
+  L <- ncol(log_lik_list[[1]])
+
+  lpd_model <- matrix(nrow = L, ncol = K)
+  for (k in seq_len(K)) {
+    ll_mat <- log_lik_list[[k]]
+    if (!is.matrix(ll_mat) || ncol(ll_mat) != L) {
+      stop("All log_lik_list elements must be matrices with same number of columns")
+    }
+    S <- nrow(ll_mat)
+    if (S <= 0) stop("Each log-likelihood matrix must have at least one row")
+    max_ll <- apply(ll_mat, 2, max)
+    sum_exp <- colSums(exp(ll_mat - matrix(max_ll, nrow = S, ncol = L, byrow = TRUE)))
+    lpd_model[, k] <- max_ll + log(sum_exp) - log(S)
+  }
+
+  exp_lpd <- exp(lpd_model)
+
+  obj_fun <- function(par) {
+    w <- exp(par) / sum(exp(par))
+    mix_dens <- as.vector(exp_lpd %*% w)
+    -sum(log(pmax(mix_dens, 1e-300)))
+  }
+
+  opt <- stats::optim(rep(0, K), obj_fun, method = "BFGS")
+  w_final <- exp(opt$par) / sum(exp(opt$par))
+
+  w_final[w_final < 1e-3] <- 0
+  if (sum(w_final) <= 0 || any(!is.finite(w_final))) {
+    rep(1 / K, K)
+  } else {
+    w_final / sum(w_final)
+  }
 }

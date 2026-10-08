@@ -96,3 +96,90 @@ time_labels <- function(x) {
     format(round(t, 3))
   }
 }
+
+#' Future trajectories of the model combination
+#'
+#' Each model contributes a number of trajectories proportional to its weight.
+#'
+#' @param bets_fit The `fit` element of a `bets` object.
+#' @param h Forecast horizon.
+#' @param n_traj Number of trajectories.
+#' @return Matrix of trajectories (n_traj x h).
+#' @keywords internal
+simulate_future_trajectories <- function(bets_fit, h = 10, n_traj = 1000) {
+  n_models <- length(bets_fit$results)
+  model_weights <- bets_fit$model_weights
+
+  traj_list <- vector("list", n_models)
+  n_traj_list <- draws_per_model(model_weights, n_traj)
+
+  for (i in seq_along(bets_fit$results)) {
+    if (n_traj_list[i] > 0) {
+      idxs <- sample(nrow(bets_fit$results[[i]]$thetas), size = n_traj_list[i], replace = TRUE)
+      res_i <- bets_fit$results[[i]]
+      traj_list[[i]] <- ets_future_traj(
+        model_components = res_i$model_components,
+        states = res_i$states[idxs, , drop = FALSE],
+        params = res_i$thetas[idxs, , drop = FALSE],
+        sigma2s = res_i$sigma2s[idxs],
+        h = h
+      )
+    }
+  }
+
+  do.call(rbind, traj_list)
+}
+
+# Simulated future trajectories of an ETS model, one per row of params (with
+# the final states and \sigma^2 of the same posterior draw)
+ets_future_traj <- function(model_components, states, params, sigma2s, h = 10) {
+  flags <- model_flags(model_components)
+  trend <- flags$trend
+  seas <- flags$seas
+  damped <- flags$damped
+
+  N_samples <- nrow(params)
+
+  # Seasonal period from the names of the states
+  s_cols <- grep("^s\\d+$", colnames(states), value = TRUE)
+  if (length(s_cols) > 1) {
+    s_idx <- as.integer(sub("^s", "", s_cols))
+    s_cols <- s_cols[order(s_idx)]
+  }
+  m <- if (seas) length(s_cols) else 1
+  if (seas && m == 0) stop("Seasonal model but no seasonal states found.")
+
+  alpha <- params[, "alpha"]
+  if (trend) {
+    beta <- params[, "beta"]
+    phi  <- if (damped) params[, "phi"] else 1
+  }
+  if (seas) gamma <- params[, "gamma"]
+
+  l <- states[, "l"]
+  if (trend) b <- states[, "b"]
+  if (seas)  s <- states[, s_cols, drop = FALSE]
+
+  # Errors for all horizons (one variance per draw)
+  errors <- matrix(stats::rnorm(N_samples * h), nrow = N_samples, ncol = h) * sqrt(sigma2s)
+
+  forecasts <- matrix(nrow = N_samples, ncol = h)
+  for (i in 1:h) {
+    forecasts[, i] <- l
+    if (trend) forecasts[, i] <- forecasts[, i] + phi * b
+    if (seas)  forecasts[, i] <- forecasts[, i] + s[, ((i - 1) %% m) + 1]
+    forecasts[, i] <- forecasts[, i] + errors[, i]
+
+    # State update
+    l <- l + alpha * errors[, i]
+    if (trend) {
+      l <- l + phi * b
+      b <- phi * b + beta * errors[, i]
+    }
+    if (seas) {
+      s[, ((i - 1) %% m) + 1] <- s[, ((i - 1) %% m) + 1] + gamma * errors[, i]
+    }
+  }
+
+  forecasts
+}
