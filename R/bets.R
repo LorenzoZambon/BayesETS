@@ -99,7 +99,10 @@
 #' - `prior_models`: prior model probabilities for BMA, one per model.
 #'   Default: equal.
 #'
-#' @return An object of class `"bets"`.
+#' @return An object of class `"bets"`: a list with the series `y`, the fit of
+#'   each model and their weights (`fit`), the models (`model_components`), the
+#'   `control` settings as given (with defaults), the value of `psi0` used, and
+#'   the `call`.
 #' @export
 bets <- function(y,
                  model = "ZZZ",
@@ -151,18 +154,24 @@ bets <- function(y,
   if (m > 24 || length(y) <= m) m <- 1L
   y_fit <- stats::ts(as.numeric(y), frequency = m)
 
+  # Scale of the prior of sigma^2: data-based unless set in control (which keeps
+  # the settings as given)
+  psi0 <- if (is.null(ctrl$psi0)) default_psi0(y_fit) else ctrl$psi0
+  fit_ctrl <- ctrl
+  fit_ctrl$psi0 <- psi0
+
   if (isTRUE(all(y_fit == y_fit[1]))) {         # constant series
     warning("y is constant! Only ETS(A,N,N) is used: the forecasts are flat and ",
             "the prediction intervals might be unreliable.",
             call. = FALSE)
-    fit <- fit_constant_series(y_fit, ctrl, combination)
+    fit <- fit_constant_series(y_fit, fit_ctrl, combination)
     model_components <- list(fit$results[[1]]$model_components)
 
   } else {                                      # non-constant series
     fit <- fit_bets_models(
       y = y_fit,
       model_components = model_components,
-      ctrl = ctrl,
+      ctrl = fit_ctrl,
       combination = combination,
       integration = ctrl$integration,
       verbose = as.numeric(verbose)
@@ -175,6 +184,7 @@ bets <- function(y,
       fit = fit,
       model_components = model_components,
       control = ctrl,
+      psi0 = psi0,
       call = match.call()
     ),
     class = "bets"
@@ -184,6 +194,7 @@ bets <- function(y,
 #' @export
 print.bets <- function(x, ...) {
   cat("BETS model fit\n")
+  cat(sprintf("  call: %s\n", paste(deparse(x$call, width.cutoff = 500L), collapse = " ")))
   cat(sprintf("  length of the series: %d\n", length(x$y)))
   cat(sprintf("  frequency: %s\n", format(stats::frequency(x$y))))
 

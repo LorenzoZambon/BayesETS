@@ -16,9 +16,8 @@ bets(
 \arguments{
 \item{y}{Univariate time series.}
 
-\item{model}{Models to fit: an ETS code such as \code{"AAdN"}, where \code{"Z"} lets a
-component take all its supported options (default \code{"ZZZ"}: all supported
-models; e.g. \code{"AZN"}: the non-seasonal models), or a vector of codes.
+\item{model}{Models to fit: either an ETS code (made of 3 or 4 characters, see \strong{Details})
+or a vector of ETS codes. Default is \code{"ZZZ"} (all supported models).
 Duplicate models are dropped.}
 
 \item{combination}{How the models are combined; only \code{"bma"} (default) is
@@ -34,7 +33,10 @@ currently supported.}
 entries take their default values.}
 }
 \value{
-An object of class \code{"bets"}.
+An object of class \code{"bets"}: a list with the series \code{y}, the fit of
+each model and their weights (\code{fit}), the models (\code{model_components}), the
+\code{control} settings as given (with defaults), the value of \code{psi0} used, and
+the \code{call}.
 }
 \description{
 Fits several ETS models and combines them into a single predictive
@@ -45,6 +47,22 @@ variance are integrated analytically.
 Currently only additive-error models are supported.
 }
 \details{
+\subsection{ETS codes}{
+
+An ETS code must have 3 or 4 characters; the possible values for each component are:
+\itemize{
+\item Error: \code{"A"}, \code{"M"}, \code{"Z"}
+\item Trend: \code{"N"}, \code{"A"}, \code{"M"}, \code{"Z"}, \code{"Ad"}, \code{"Md"}
+\item Season: \code{"N"}, \code{"A"}, \code{"M"}, \code{"Z"}
+}
+
+\code{"A"}: additive,
+\code{"Ad"}: additive damped,
+\code{"M"}: multiplicative,
+\code{"Md"}: multiplicative damped,
+\code{"Z"}: all supported options for the component.
+}
+
 \subsection{Integration methods}{
 
 Both methods start from the posterior mode of the (unconstrained) smoothing

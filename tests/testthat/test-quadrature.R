@@ -103,6 +103,7 @@ test_that("quadrature works with stacking (pointwise log-likelihoods)", {
   set.seed(1)
   y <- ts(rnorm(30))
   ctrl <- BETS:::resolve_bets_control(list(N_final = 50L))
+  ctrl$psi0 <- BETS:::default_psi0(y)
   fit <- BETS:::fit_bets_models(y, BETS:::coerce_model_components(list("ANN", "AAN"), 1),
                                 ctrl, combination = "stacking", integration = "quadrature")
   expect_equal(dim(fit$results[[1]]$log_lik_pointwise), c(50L, 30L))

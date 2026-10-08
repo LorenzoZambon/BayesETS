@@ -52,7 +52,7 @@ test_that("bets() returns object of class 'bets'", {
 test_that("bets() result contains expected top-level elements", {
   set.seed(1)
   fit <- bets(ts(rnorm(20)), model = "ANN")
-  expect_named(fit, c("y", "fit", "model_components", "control", "call"),
+  expect_named(fit, c("y", "fit", "model_components", "control", "psi0", "call"),
                ignore.order = TRUE)
 })
 
@@ -181,9 +181,22 @@ test_that("bets() fit contains one result per model", {
   expect_length(fit$fit$results, 2)
 })
 
-test_that("print.bets() runs without error and prints header", {
+test_that("print.bets() runs without error and prints header and call", {
   set.seed(1)
   fit <- bets(ts(rnorm(20)), model = "ANN")
   expect_output(print(fit), "BETS model fit")
+  expect_output(print(fit), "call: bets\\(y = ts\\(rnorm\\(20\\)\\), model = \"ANN\"\\)")
+})
+
+test_that("bets() stores the psi0 used, and keeps control as given", {
+  set.seed(1)
+  y <- ts(cumsum(rnorm(30)))
+  fit <- bets(y, model = "ANN")
+  expect_equal(fit$psi0, BETS:::default_psi0(y))
+  expect_null(fit$control$psi0)
+  fit <- bets(y, model = "ANN", control = list(psi0 = 2))
+  expect_equal(fit$psi0, 2)
+  expect_equal(fit$control$psi0, 2)
+  expect_equal(suppressWarnings(bets(ts(rep(5, 10))))$psi0, (0.2 * 5)^2)
 })
 

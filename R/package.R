@@ -25,10 +25,6 @@ fit_bets_models <- function(y,
 
   ctrl$verbose <- verbose   # read by the integrators
 
-  if (is.null(ctrl$psi0)) {
-    ctrl$psi0 <- default_psi0(y)
-  }
-
   freq <- stats::frequency(y)
 
   n_models <- length(model_components)
@@ -155,7 +151,6 @@ fit_one_model <- function(y, model_components, ctrl, integration,
 fit_constant_series <- function(y, ctrl, combination) {
   level <- as.numeric(y[1])
   psi0 <- ctrl$psi0
-  if (is.null(psi0)) psi0 <- (0.2 * (if (level != 0) abs(level) else 1))^2
   n <- resolve_by_d(ctrl$N_final, 1)
   result <- list(
     thetas = matrix(stats::runif(n), ncol = 1, dimnames = list(NULL, "alpha")),
@@ -171,8 +166,9 @@ fit_constant_series <- function(y, ctrl, combination) {
 }
 
 # Default psi0: variance of the naive or (if smaller) of the seasonal naive residuals,
-# floored to stay positive for deterministic series.
+# floored to stay positive for deterministic series; heuristic for constant series.
 default_psi0 <- function(y) {
+  if (all(y == y[1])) return((0.2 * (if (y[1] != 0) abs(y[1]) else 1))^2)
   m <- stats::frequency(y)
   psi0 <- stats::var(diff(y))
   if (m > 1) psi0 <- min(psi0, stats::var(diff(y, lag = m)), na.rm = TRUE)

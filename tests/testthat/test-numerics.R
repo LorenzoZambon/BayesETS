@@ -7,6 +7,7 @@ test_that("co2 ETS(A,A,A): no spurious evidence from exploding recursions", {
   # at 0 gave log evidence ~ +600 instead of ~ -141
   mc <- BETS:::coerce_model_components("AAA", 12)
   ctrl <- BETS:::resolve_bets_control(list(N_final = 50L))
+  ctrl$psi0 <- BETS:::default_psi0(co2)
   le <- vapply(c("quadrature", "ais"), function(im) {
     set.seed(1)
     BETS:::fit_bets_models(co2, mc, ctrl, integration = im)$results[[1]]$log_evidence
