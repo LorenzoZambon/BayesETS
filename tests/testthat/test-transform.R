@@ -147,3 +147,13 @@ test_that("transform works row-wise for multiple particles", {
   expect_true(all(res$theta[, "beta"] < res$theta[, "alpha"]))
   expect_true(all(is.finite(res$log_jac)))
 })
+
+test_that("transform_theta_to_unconstrained() inverts the transform", {
+  set.seed(8)
+  pars <- c("alpha", "beta", "phi", "gamma")
+  z <- matrix(rnorm(40, sd = 3), ncol = 4, dimnames = list(NULL, pars))
+  theta <- transform_unconstrained_to_theta(z, pars, 0.8, 0.98)$theta
+  expect_equal(transform_theta_to_unconstrained(theta, 0.8, 0.98), z, tolerance = 1e-8)
+  expect_equal(transform_theta_to_unconstrained(theta[, "alpha", drop = FALSE], 0.8, 0.98),
+               z[, "alpha", drop = FALSE], tolerance = 1e-8)
+})

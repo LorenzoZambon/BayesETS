@@ -59,7 +59,7 @@ test_that("fit_one_model() with AIS returns posterior draws, ESS and proposal", 
     ctrl$psi0 <- mean(diff(y)^2)
     res <- fit_one_model(y, mc, ctrl, "ais")
     d <- if (mc[[2]] == "N") 1 else 4
-    expect_named(res, c("thetas", "etas", "states", "sigma2s", "ess", "n_iter",
+    expect_named(res, c("thetas", "etas", "states", "sigma2s", "particles", "ess", "n_iter",
                         "prop_params", "log_evidence", "log_lik_pointwise", "timing"))
     expect_true(is.finite(res$log_evidence))
     expect_gte(res$ess, ctrl$N_draw[d] / 4)

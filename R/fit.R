@@ -13,13 +13,11 @@ fit_bets_models <- function(y,
 
   ctrl$verbose <- verbose   # read by the integrators
 
-  freq <- stats::frequency(y)
-
   n_models <- length(model_components)
   need_pointwise <- (combination == "stacking")
 
   # Centre the series at its initial level (only the level states change)
-  y_shift <- mean(y[seq_len(max(1L, min(as.integer(freq), length(y))))])
+  y_shift <- centring_shift(y)
   y_centred <- y - y_shift
 
   results_list <- vector("list", n_models)
@@ -122,11 +120,21 @@ fit_one_model <- function(y, model_components, ctrl, integration,
     timing$post <- proc.time()[3] - t0
   }
 
+  # Weighted particles of the posterior (quadrature nodes or AIS draws), for the
+  # summaries: theta, weights, and \sigma^2 | theta ~ sigma2_scale / \chi^2_{sigma2_df}
+  particles <- if (!failed) {
+    keep <- int$w > 0
+    list(theta = int$theta[keep, , drop = FALSE], w = int$w[keep],
+         sigma2_scale = as.numeric(int$ml_res$posterior_scale)[keep],
+         sigma2_df = ctrl$nu0 + length(y))
+  }
+
   list(
     thetas = post$thetas,
     etas = post$etas,
     states = post$states,
     sigma2s = post$sigma2s,
+    particles = particles,
     ess = int$ess,
     n_iter = int$n_iter,
     prop_params = int$proposal,
@@ -194,6 +202,11 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
   )
 }
 
+# Shift that centres the series at its initial level (mean of the first period)
+centring_shift <- function(y) {
+  mean(y[seq_len(max(1L, min(as.integer(stats::frequency(y)), length(y))))])
+}
+
 # Fit of a constant series with ETS(A,N,N).
 # The posterior is simple: since residuals are all zero, alpha keeps its prior,
 # the final level is the constant and \sigma^2 is driven by its prior only.
@@ -206,6 +219,10 @@ fit_constant_series <- function(y, ctrl, combination) {
     etas = matrix(level, nrow = n, ncol = 1, dimnames = list(NULL, "l")),
     states = matrix(level, nrow = n, ncol = 1, dimnames = list(NULL, "l")),
     sigma2s = psi0 / stats::rchisq(n, df = ctrl$nu0 + length(y)),
+    # alpha keeps its uniform prior: equally weighted, equally spaced quantiles
+    particles = list(theta = matrix(stats::ppoints(n), ncol = 1, dimnames = list(NULL, "alpha")),
+                     w = rep(1 / n, n), sigma2_scale = rep(psi0, n),
+                     sigma2_df = ctrl$nu0 + length(y)),
     log_evidence = NA_real_,
     model_components = c("A", "N", "N", "FALSE"),
     integration = "constant series"

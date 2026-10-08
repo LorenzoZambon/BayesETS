@@ -209,3 +209,17 @@ transform_unconstrained_to_theta <- function(theta_unc, param_names, phi_min, ph
 
   list(theta = theta, log_jac = log_jac)
 }
+
+# Inverse of transform_unconstrained_to_theta(): unconstrained values of the
+# smoothing parameters (matrix theta, one column per parameter)
+transform_theta_to_unconstrained <- function(theta, phi_min, phi_max) {
+  z <- theta
+  alpha <- theta[, "alpha"]
+  z[, "alpha"] <- stats::qlogis(alpha)
+  if ("beta" %in% colnames(theta))  z[, "beta"]  <- stats::qlogis(theta[, "beta"] / alpha)
+  if ("gamma" %in% colnames(theta)) z[, "gamma"] <- stats::qlogis(theta[, "gamma"] / (1 - alpha))
+  if ("phi" %in% colnames(theta)) {
+    z[, "phi"] <- stats::qlogis((theta[, "phi"] - phi_min) / (phi_max - phi_min))
+  }
+  z
+}

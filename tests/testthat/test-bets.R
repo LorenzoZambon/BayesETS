@@ -52,7 +52,7 @@ test_that("bets() returns object of class 'bets'", {
 test_that("bets() result contains expected top-level elements", {
   set.seed(1)
   fit <- bets(ts(rnorm(20)), model = "ANN")
-  expect_named(fit, c("y", "fit", "model_components", "control", "psi0", "call"),
+  expect_named(fit, c("y", "fit", "model_components", "control", "psi0", "period", "call"),
                ignore.order = TRUE)
 })
 
@@ -133,7 +133,7 @@ test_that("frequency > 24: 'ZZZ' drops seasonal models, explicit ones are an err
 test_that("seasonal series shorter than one period: non-seasonal models only", {
   set.seed(1)
   y <- ts(10 + cumsum(rnorm(10)), frequency = 12)
-  fit <- bets(y)
+  expect_warning(fit <- bets(y), "not sufficient for seasonal models")
   expect_length(fit$model_components, 3)
   expect_true(all(is.finite(predict(fit, h = 3)$mean)))
   expect_error(bets(y, model = "ANA"), "more than frequency\\(y\\) observations")
@@ -194,10 +194,10 @@ test_that("print.bets() shows posterior means, negligible models and component p
   fit <- bets(ts(rnorm(30)), model = c("ANN", "AAN"), control = list(prior_models = c(1, 0)))
   out <- capture.output(print(fit))
   expect_true(any(grepl("^  model +weight +alpha +sigma$", out)))
-  alpha <- sprintf("%.3f", mean(fit$fit$results[[1]]$thetas[, "alpha"]))
+  alpha <- sprintf("%.3f", summary(fit)$parameters$ANN["alpha", "mean"])
   expect_true(any(grepl(paste0("^  ANN +1\\.000 +", alpha, " "), out)))
   expect_true(any(grepl("(weight < 0.001: AAN)", out, fixed = TRUE)))
-  expect_true(any(grepl("Posterior probability of: trend 0.00", out, fixed = TRUE)))
+  expect_true(any(grepl("Posterior probability of trend: 0.00", out, fixed = TRUE)))
 })
 
 test_that("bets() stores the psi0 used, and keeps control as given", {

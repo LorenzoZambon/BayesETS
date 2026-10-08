@@ -36,8 +36,8 @@ entries take their default values.}
 \value{
 An object of class \code{"bets"}: a list with the series \code{y}, the fit of
 each model and their weights (\code{fit}), the models (\code{model_components}), the
-\code{control} settings as given (with defaults), the value of \code{psi0} used, and
-the \code{call}.
+\code{control} settings as given (with defaults), the value of \code{psi0} used, the
+seasonal \code{period} used for fitting, and the \code{call}.
 }
 \description{
 Several ETS models are estimated separately in a Bayesian framework;
