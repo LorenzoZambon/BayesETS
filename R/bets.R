@@ -1,10 +1,12 @@
 #' Fit a Bayesian ETS model
 #'
-#' Fits several ETS models and combines them into a single predictive
-#' distribution, by Bayesian Model Averaging (BMA).
-#' The smoothing parameters are integrated by adaptive Gauss-Hermite quadrature
-#' or adaptive importance sampling (AIS); the initial states and the error
-#' variance are integrated analytically.
+#' Several ETS models are estimated separately in a Bayesian framework;
+#' a posterior distribution is obtained for the parameters of each model.
+#' The smoothing parameters are integrated by adaptive Gauss-Hermite quadrature (AGHQ)
+#' or adaptive importance sampling (AIS); 
+#' the initial states and the error variance are integrated analytically.
+#' Then the models are combined into a single predictive
+#' distribution via Bayesian Model Averaging (BMA).
 #' Currently only additive-error models are supported.
 #'
 #' @param y Univariate time series.
@@ -14,9 +16,10 @@
 #' @param combination How the models are combined; only `"bma"` (default) is
 #'   currently supported.
 #' @param additive.only Logical; only `TRUE` (default) is currently supported.
-#' @param verbose `0` (default) prints nothing, `1` prints the model weights,
-#'   `2` also prints the progress of each fit. `TRUE`/`FALSE` are accepted as
-#'   `1`/`0`.
+#' @param verbose `0` (default) prints nothing, 
+#' `1` prints the model weights,
+#' `2` also prints the progress of each fit. 
+#' `TRUE`/`FALSE` are accepted as `1`/`0`.
 #' @param control Named list of tuning parameters, see **Details**. Missing
 #'   entries take their default values.
 #'
@@ -33,26 +36,24 @@
 #' `"Ad"`: additive damped,
 #' `"M"`: multiplicative,
 #' `"Md"`: multiplicative damped,
-#' `"Z"`: all supported options for the component.
+#' `"Z"`: all supported options for that component.
 #' 
 #' ## Integration methods
 #'
-#' Both methods start from the posterior mode of the (unconstrained) smoothing
-#' parameters and the inverse Hessian there. Quadrature uses a Gauss-Hermite
-#' grid scaled by the inverse Hessian. AIS samples a Student-t proposal with
-#' randomised Sobol points, and adapts it until the effective sample size
-#' reaches `min_ess`. By default (`integration = "auto"`), quadrature is used
+#' Both methods start from the posterior mode of the smoothing
+#' parameters (mapped to unconstrained space) and the inverse Hessian there. 
+#' Quadrature uses a Gauss-Hermite grid scaled by the inverse Hessian. 
+#' AIS samples a Student-t proposal and adapts it until the effective sample size (ESS)
+#' reaches `min_ess`. 
+#' By default (`integration = "auto"`), quadrature is used
 #' for models with up to 2 smoothing parameters (ANN, AAN, ANA) and AIS for
 #' the others (AAdN, AAA, AAdA).
 #'
 #' ## Seasonal period
 #'
-#' The seasonal period is `frequency(y)`, with the rules of `forecast::ets()`:
-#' a frequency below 1 counts as 1, and a non-integer frequency (e.g. weekly
-#' data) allows only non-seasonal models, both with a warning. Seasonal models
-#' also require a period of at most 24 and more than one full period of data.
-#' With `model = "ZZZ"`, seasonal models are dropped when these conditions do
-#' not hold; requesting one explicitly is an error.
+#' The seasonal period is `frequency(y)`.
+#' Seasonal models need an integer period between 2 and 24, and more than one full period of observations;
+#' otherwise, only non-seasonal models can be fitted.
 #'
 #' ## Constant series
 #'
@@ -67,8 +68,8 @@
 #' (`d` = 1, ..., 4); a scalar applies to all `d`.
 #'
 #' Integration:
-#' - `integration`: `"auto"` (default), `"quadrature"` or `"ais"`, to use one
-#'   method for all models. Quadrature is not recommended for models with 3 or
+#' - `integration`: `"auto"` (default), `"quadrature"` or `"ais"`.
+#'   Quadrature is not recommended for models with 3 or
 #'   more smoothing parameters.
 #' - `n_scan`: number of prior points evaluated to start the search of the
 #'   posterior mode. Default 64.
@@ -88,14 +89,14 @@
 #'   [predict.bets()], indexed by `d`. Default `c(200, 300, 500, 500)`.
 #'
 #' Priors:
-#' - `nu0`, `psi0`: prior of the error variance \eqn{\sigma^2}, a scaled
-#'   inverse chi-squared with `nu0` degrees of freedom (default 3, must be
-#'   greater than 2) and mean `psi0 / (nu0 - 2)`. By default, `psi0` is the
+#' - `nu0`, `psi0`: parameters of the prior of the error variance \eqn{\sigma^2}, 
+#'   a scaled inverse chi-squared with `nu0` degrees of freedom (default 3, must be >2) 
+#'   and mean `psi0 / (nu0 - 2)`. By default, `psi0` is the
 #'   residual variance of the naive or seasonal naive forecasts.
 #' - `c_inflate_eta`: inflation factor of the prior covariance of the initial
 #'   states, which is set by a heuristic (default 3).
-#' - `phi_min`, `phi_max`: range of the damping parameter (default 0.8 and
-#'   0.98). All smoothing parameters have uniform priors.
+#' - `phi_min`, `phi_max`: range of the damping parameter (default 0.8 and 0.98). 
+#'   All smoothing parameters have uniform priors.
 #' - `prior_models`: prior model probabilities for BMA, one per model.
 #'   Default: equal.
 #'
