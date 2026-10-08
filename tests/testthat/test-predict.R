@@ -138,3 +138,22 @@ test_that("predict.bets() x matches training series", {
   fc <- predict(fit_ann, h = 5)
   expect_identical(fc$x, fit_ann$y)
 })
+
+# ---------------------------------------------------------------------------
+# Printing
+# ---------------------------------------------------------------------------
+
+test_that("print.bets_forecast() prints a table of forecasts and intervals", {
+  out <- capture.output(print(predict(fit_seas, h = 4)))
+  expect_length(out, 5)
+  expect_match(out[1], "Point Forecast +Lo 80 +Hi 80 +Lo 95 +Hi 95")
+  expect_match(out[2], "^7 Q1 ")
+})
+
+test_that("time_labels() gives months, quarters and years", {
+  expect_identical(BETS:::time_labels(ts(1:3, start = c(2020, 11), frequency = 12)),
+                   c("Nov 2020", "Dec 2020", "Jan 2021"))
+  expect_identical(BETS:::time_labels(ts(1:2, start = c(2020, 4), frequency = 4)),
+                   c("2020 Q4", "2021 Q1"))
+  expect_identical(BETS:::time_labels(ts(1:2, start = 1999)), c("1999", "2000"))
+})

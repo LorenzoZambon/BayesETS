@@ -3,6 +3,7 @@
 S3method(fitted,bets)
 S3method(predict,bets)
 S3method(print,bets)
+S3method(print,bets_forecast)
 S3method(residuals,bets)
 export(bets)
 importFrom(Rcpp,evalCpp)

@@ -66,3 +66,33 @@ predict.bets <- function(object, newdata = NULL, h = 10, level = c(80, 95),
   class(out) <- "bets_forecast"
   out
 }
+
+#' @export
+print.bets_forecast <- function(x, ...) {
+  out <- data.frame(`Point Forecast` = as.numeric(x$mean), check.names = FALSE)
+  for (j in seq_along(x$level)) {
+    out[[paste("Lo", x$level[j])]] <- as.numeric(x$lower[, j])
+    out[[paste("Hi", x$level[j])]] <- as.numeric(x$upper[, j])
+  }
+  rownames(out) <- time_labels(x$mean)
+  print(out, ...)
+  invisible(x)
+}
+
+# Labels of the time points of a ts: "Jan 2020" (monthly), "2020 Q1" (quarterly),
+# the year (yearly), otherwise the time
+time_labels <- function(x) {
+  t <- as.numeric(stats::time(x))
+  f <- stats::frequency(x)
+  year <- floor(t + 1e-8)
+  period <- round((t - year) * f) + 1
+  if (f == 12) {
+    paste(month.abb[period], year)
+  } else if (f == 4) {
+    paste0(year, " Q", period)
+  } else if (f == 1) {
+    as.character(year)
+  } else {
+    format(round(t, 3))
+  }
+}
