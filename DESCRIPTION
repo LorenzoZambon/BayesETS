@@ -18,7 +18,7 @@ Description: Bayesian exponential smoothing (ETS) state space models for
     The ETS models are combined by Bayesian model averaging (BMA), and forecasts are obtained 
     by simulating future sample paths. 
     Currently only additive models are supported.
-License: GPL-3
+License: LGPL (>= 3)
 URL: https://github.com/LorenzoZambon/BETS
 BugReports: https://github.com/LorenzoZambon/BETS/issues
 Encoding: UTF-8

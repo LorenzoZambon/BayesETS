@@ -28,7 +28,7 @@ fit_bets_models <- function(y,
   fit_time_per_model <- numeric(n_models)
 
   for (i in seq_along(model_components)) {
-    if (verbose >= 2) cat(sprintf("\n\nFitting model %d of %d\n", i, n_models))
+    if (verbose >= 2) cat(sprintf("\nFitting model %d of %d\n", i, n_models))
     t0 <- proc.time()[3]
 
     integration_i <- resolve_integration(integration, model_components[[i]])
