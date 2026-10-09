@@ -194,7 +194,7 @@ test_that("print.bets() shows posterior means, negligible models and component p
   fit <- bets(ts(rnorm(30)), model = c("ANN", "AAN"), control = list(prior_models = c(1, 0)))
   out <- capture.output(print(fit))
   expect_true(any(grepl("^  model +weight +alpha +sigma$", out)))
-  alpha <- sprintf("%.3f", summary(fit)$parameters$ANN["alpha", "mean"])
+  alpha <- sprintf("%.3f", posterior_summary(fit$fit$results[[1]]$particles)["alpha", "mean"])
   expect_true(any(grepl(paste0("^  ANN +1\\.000 +", alpha, " "), out)))
   expect_true(any(grepl("(weight < 0.001: AAN)", out, fixed = TRUE)))
   expect_true(any(grepl("Posterior probability of trend: 0.00", out, fixed = TRUE)))

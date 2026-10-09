@@ -6,7 +6,7 @@
 #' weighted posterior particles of each model (quadrature nodes or AIS draws).
 #'
 #' The initial states are the level `l`, the slope `b` and the seasonal states
-#' `s1`, ..., `sm` (`sm` is the one of the first observation), 
+#' `s1`, ..., `sm` (`sm` is the one of the first observation),
 #' normalised to sum to zero.
 #'
 #' @param object A fitted object from [bets()].
@@ -42,10 +42,11 @@ summary.bets <- function(object, level = 95, states = FALSE, ...) {
   labels <- vapply(object$model_components, ets_label, character(1))
   results <- object$fit$results
   w <- object$fit$model_weights
-  # f(i) for the models with particles (NULL for failed models)
+  probs <- c(100 - level, 100 + level) / 200
+  # f(i) for the models with particles (NULL for failed models), rounded
   by_model <- function(f) {
     stats::setNames(lapply(seq_along(results), function(i) {
-      if (!is.null(results[[i]]$particles)) f(i)
+      if (!is.null(results[[i]]$particles)) round(f(i), 4)
     }), labels)
   }
 
@@ -53,10 +54,10 @@ summary.bets <- function(object, level = 95, states = FALSE, ...) {
     list(
       call = object$call,
       level = level,
-      models = data.frame(model = labels, weight = w,
-                          log_evidence = vapply(results, `[[`, numeric(1), "log_evidence")),
-      parameters = by_model(function(i) posterior_summary(results[[i]]$particles, level / 100)),
-      states = if (states) by_model(function(i) states_summary(object, i, level / 100)),
+      models = data.frame(model = labels, weight = round(w, 4),
+                          log_evidence = round(vapply(results, `[[`, numeric(1), "log_evidence"), 3)),
+      parameters = by_model(function(i) posterior_summary(results[[i]]$particles, probs)),
+      states = if (states) by_model(function(i) states_summary(object, i, probs)),
       probabilities = if (object$fit$combination == "bma") {
         component_probabilities(object$model_components, w)
       }
@@ -76,18 +77,11 @@ print.summary.bets <- function(x, ...) {
     le <- m$log_evidence[i]
     cat(sprintf("\n  %s: weight %.3f%s\n", m$model[i], m$weight[i],
                 if (is.finite(le)) sprintf(", log evidence %.2f", le) else ""))
-    # Smoothing parameters with 3 decimals; sigma and the states (scale of y)
-    # with 4 significant digits
     s <- x$parameters[[i]]
-    par <- rownames(s) != "sigma"
-    tab <- matrix("", nrow(s), ncol(s), dimnames = dimnames(s))
-    tab[par, ] <- sprintf("%.3f", as.matrix(s[par, ]))
-    tab[!par, ] <- format_signif(as.matrix(s[!par, ]))
-    cat_table(cbind(" " = rownames(s), tab))
+    cat_summary(s, decimals = rownames(s) != "sigma")
     if (!is.null(x$states)) {
       cat("  initial states:\n")
-      st <- as.matrix(x$states[[i]])
-      cat_table(cbind(" " = rownames(st), matrix(format_signif(st), nrow(st), dimnames = dimnames(st))))
+      cat_summary(x$states[[i]])
     }
   }
   cat_negligible(m$model, shown)
@@ -95,12 +89,15 @@ print.summary.bets <- function(x, ...) {
   invisible(x)
 }
 
-# Posterior mean, sd and equal-tailed interval (level in (0, 1)) of the
-# smoothing parameters and of sigma, from the weighted particles of a model
-posterior_summary <- function(particles, level = 0.95) {
+
+################################################################################
+# PARAMETERS
+
+# Posterior mean, sd and quantiles (probs) of the smoothing parameters and of
+# sigma, from the weighted particles of a model
+posterior_summary <- function(particles, probs = c(0.025, 0.975)) {
   theta <- particles$theta
-  w <- particles$w / sum(particles$w)
-  probs <- c((1 - level) / 2, (1 + level) / 2)
+  w <- particles$w
   rows <- lapply(colnames(theta), function(p) {
     m <- sum(w * theta[, p])
     c(m, sqrt(sum(w * (theta[, p] - m)^2)), weighted_quantile(theta[, p], w, probs))
@@ -111,16 +108,41 @@ posterior_summary <- function(particles, level = 0.95) {
   out
 }
 
-# Posterior mean, sd and equal-tailed interval of the normalised initial states
-# of model i: mixture over the particles of their t posteriors
-states_summary <- function(object, i, level = 0.95) {
+# Quantiles of a discrete distribution (values x, weights w), by linear
+# interpolation of the CDF at the midpoints of the weights
+weighted_quantile <- function(x, w, probs) {
+  keep <- w > 0
+  o <- order(x[keep])
+  x <- x[keep][o]
+  w <- w[keep][o] / sum(w[keep])
+  stats::approx(cumsum(w) - w / 2, x, xout = probs, rule = 2, ties = "ordered")$y
+}
+
+# Mean, sd and quantiles of sigma, whose posterior is a mixture over the
+# particles (weights w) of \sigma^2 = scale / \chi^2_df
+sigma_summary <- function(scale, df, w, probs) {
+  # E[\sigma | theta] = sqrt(scale) E[1 / \chi_df], E[\sigma^2 | theta] = scale / (df - 2)
+  m  <- sum(w * sqrt(scale)) * exp(lgamma((df - 1) / 2) - lgamma(df / 2)) / sqrt(2)
+  m2 <- sum(w * scale) / (df - 2)
+  cdf <- function(s) sum(w * stats::pchisq(scale / s^2, df, lower.tail = FALSE))
+  q <- vapply(probs, function(p) {
+    mixture_quantile(cdf, p, sqrt(range(scale) / stats::qchisq(1 - p, df)))
+  }, numeric(1))
+  c(m, sqrt(max(m2 - m^2, 0)), q)
+}
+
+
+################################################################################
+# INITIAL STATES
+
+# Posterior mean, sd and quantiles (probs) of the normalised initial states of
+# model i: mixture over the particles of their t posteriors
+states_summary <- function(object, i, probs = c(0.025, 0.975)) {
   p <- object$fit$results[[i]]$particles
-  w <- p$w / sum(p$w)
-  probs <- c((1 - level) / 2, (1 + level) / 2)
   st <- initial_states_particles(object, i)
   out <- t(vapply(colnames(st$loc), function(j) {
-    t_mixture_summary(st$loc[, j], st$scale[, j], p$sigma2_df, w, probs)
-  }, numeric(4)))
+    t_mixture_summary(st$loc[, j], st$scale[, j], p$sigma2_df, p$w, probs)
+  }, numeric(2 + length(probs))))
   out <- as.data.frame(out)
   colnames(out) <- summary_colnames(probs)
   out
@@ -188,51 +210,31 @@ initial_states_t <- function(mu_n, Rn, s2, A) {
   list(loc = loc, scale = sqrt(v * s2))
 }
 
-summary_colnames <- function(probs) c("mean", "sd", paste0(signif(100 * probs, 4), "%"))
-
 # Mean, sd and quantiles of a mixture (weights w) of location-scale t
 # distributions with df degrees of freedom (point masses if all scales are 0)
 t_mixture_summary <- function(loc, scale, df, w, probs) {
   m <- sum(w * loc)
   v <- sum(w * (scale^2 * df / (df - 2) + loc^2)) - m^2
   q <- if (all(scale == 0)) weighted_quantile(loc, w, probs) else vapply(probs, function(p) {
-    # The quantile of the mixture lies between those of the components
-    range_p <- range(loc + scale * stats::qt(p, df))
-    if (diff(range_p) <= 1e-10 * max(abs(range_p))) return(range_p[1])
     cdf <- function(x) sum(w * stats::pt((x - loc) / scale, df))
-    stats::uniroot(function(x) cdf(x) - p, range_p, tol = 1e-10 * max(abs(range_p)))$root
+    mixture_quantile(cdf, p, range(loc + scale * stats::qt(p, df)))
   }, numeric(1))
   c(m, sqrt(max(v, 0)), q)
 }
 
-# 4 significant digits, keeping trailing zeros
-format_signif <- function(x) sub("\\.$", "", formatC(x, digits = 4, format = "fg", flag = "#"))
 
-# Quantiles of a discrete distribution (values x, weights w), by linear
-# interpolation of the CDF at the midpoints of the weights
-weighted_quantile <- function(x, w, probs) {
-  keep <- w > 0
-  o <- order(x[keep])
-  x <- x[keep][o]
-  w <- w[keep][o] / sum(w[keep])
-  stats::approx(cumsum(w) - w / 2, x, xout = probs, rule = 2, ties = "ordered")$y
+################################################################################
+# HELPERS
+
+# Quantile p of a mixture with CDF cdf, given the range of the quantiles of its
+# components (which contains it)
+mixture_quantile <- function(cdf, p, range_p) {
+  tol <- 1e-10 * max(abs(range_p))
+  if (diff(range_p) <= tol) return(range_p[1])
+  stats::uniroot(function(x) cdf(x) - p, range_p, tol = tol)$root
 }
 
-# Mean, sd and quantiles of sigma, whose posterior is a mixture over the
-# particles (weights w) of \sigma^2 = scale / \chi^2_df
-sigma_summary <- function(scale, df, w, probs) {
-  # E[\sigma | theta] = sqrt(scale) E[1 / \chi_df], E[\sigma^2 | theta] = scale / (df - 2)
-  m  <- sum(w * sqrt(scale)) * exp(lgamma((df - 1) / 2) - lgamma(df / 2)) / sqrt(2)
-  m2 <- sum(w * scale) / (df - 2)
-  cdf <- function(s) sum(w * stats::pchisq(scale / s^2, df, lower.tail = FALSE))
-  q <- vapply(probs, function(p) {
-    # The quantile of the mixture lies between those of the components
-    range_p <- sqrt(range(scale) / stats::qchisq(1 - p, df))
-    if (diff(range_p) <= 1e-10 * range_p[2]) return(range_p[1])
-    stats::uniroot(function(s) cdf(s) - p, range_p, tol = 1e-10 * range_p[2])$root
-  }, numeric(1))
-  c(m, sqrt(max(m2 - m^2, 0)), q)
-}
+summary_colnames <- function(probs) c("mean", "sd", paste0(signif(100 * probs, 4), "%"))
 
 # BMA: posterior probability of each component (trend, damped trend,
 # seasonality) present in some of the models but not all; NULL if none
@@ -245,9 +247,20 @@ component_probabilities <- function(model_components, weights) {
 }
 
 # Models shown by print() and summary(): weight >= 0.001, by decreasing weight
+# (weights rounded as in summary(), so that both show the same models)
 shown_models <- function(weights) {
   o <- order(weights, decreasing = TRUE)
-  o[weights[o] >= 0.001]
+  o[round(weights[o], 4) >= 0.001]
+}
+
+# Table of a summary (data frame): rows in `decimals` with 3 decimals, the
+# others (scale of y) with 4 significant digits
+cat_summary <- function(s, decimals = rep(FALSE, nrow(s))) {
+  x <- as.matrix(s)
+  tab <- matrix(sub("\\.$", "", formatC(x, digits = 4, format = "fg", flag = "#")),
+                nrow(x), dimnames = dimnames(x))
+  tab[decimals, ] <- sprintf("%.3f", x[decimals, ])
+  cat_table(cbind(" " = rownames(x), tab))
 }
 
 # The models not shown, in one line
@@ -261,7 +274,7 @@ cat_negligible <- function(labels, shown) {
 # "Posterior probability of trend: 0.75, ..." (nothing if probs is NULL)
 cat_probabilities <- function(probs) {
   if (length(probs) > 0) {
-    cat(sprintf("\n  Posterior probability of %s\n",
+    cat(sprintf("\n  Posterior probability of %s\n\n",
                 paste(sprintf("%s: %.2f", names(probs), probs), collapse = ", ")))
   }
 }

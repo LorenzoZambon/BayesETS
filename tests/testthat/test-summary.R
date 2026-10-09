@@ -70,7 +70,7 @@ test_that("summary.bets() returns the summaries of every model", {
   s <- summary(fit_seas)
   expect_s3_class(s, "summary.bets")
   expect_identical(s$models$model, c("ANN", "ANA", "AAdA"))
-  expect_equal(s$models$weight, fit_seas$fit$model_weights)
+  expect_equal(s$models$weight, round(fit_seas$fit$model_weights, 4))
   expect_identical(rownames(s$parameters$AAdA), c("alpha", "beta", "phi", "gamma", "sigma"))
   expect_identical(colnames(s$parameters$ANA), c("mean", "sd", "2.5%", "97.5%"))
   for (p in s$parameters) {
@@ -79,6 +79,13 @@ test_that("summary.bets() returns the summaries of every model", {
   }
   expect_named(s$probabilities, c("trend", "damped trend", "seasonality"))
   expect_identical(colnames(summary(fit_seas, level = 80)$parameters$ANN), c("mean", "sd", "10%", "90%"))
+})
+
+test_that("summary.bets() rounds parameters, sigma and states to 4 decimals", {
+  s <- summary(fit_seas, states = TRUE)
+  expect_equal(s$parameters$AAdA, round(posterior_summary(fit_seas$fit$results[[3]]$particles), 4))
+  expect_equal(s$states$AAdA, round(states_summary(fit_seas, 3), 4))
+  expect_equal(s$models$weight, round(fit_seas$fit$model_weights, 4))
 })
 
 test_that("summary.bets() errors for an invalid level", {
@@ -132,7 +139,7 @@ test_that("summary(states = TRUE): normalised initial states agree with the post
   expect_identical(rownames(s$states$AAdA), c("l", "b", "s1", "s2", "s3", "s4"))
   for (i in seq_along(fit_seas$fit$results)) {
     r <- fit_seas$fit$results[[i]]
-    st <- s$states[[i]]
+    st <- states_summary(fit_seas, i)   # not rounded, unlike s$states
     # draws normalised as in summary(): seasonal states summing to zero
     e <- r$etas
     sc <- grep("^s", colnames(e))

@@ -3,7 +3,7 @@
 #' Several ETS models are estimated separately in a Bayesian framework;
 #' a posterior distribution is obtained for the parameters of each model.
 #' The smoothing parameters are integrated by adaptive Gauss-Hermite quadrature (AGHQ)
-#' or adaptive importance sampling (AIS); 
+#' or adaptive importance sampling (AIS);
 #' the initial states and the error variance are integrated analytically.
 #' Then the models are combined into a single predictive
 #' distribution via Bayesian Model Averaging (BMA).
@@ -11,41 +11,41 @@
 #' Currently only additive-error models are supported.
 #'
 #' @param y Univariate time series.
-#' @param model Models to fit: either an ETS code (made of 3 or 4 characters, see **Details**) 
+#' @param model Models to fit: either an ETS code (made of 3 or 4 characters, see **Details**)
 #' or a vector of ETS codes. Default is `"ZZZ"` (all supported models).
 #'   Duplicate models are dropped.
 #' @param combination How the models are combined; only `"bma"` (default) is
 #'   currently supported.
 #' @param additive.only Logical; only `TRUE` (default) is currently supported.
-#' @param verbose `0` (default) prints nothing, 
+#' @param verbose `0` (default) prints nothing,
 #' `1` prints the model weights,
-#' `2` also prints the progress of each fit. 
+#' `2` also prints the progress of each fit.
 #' `TRUE`/`FALSE` are accepted as `1`/`0`.
 #' @param control Named list of tuning parameters, see **Details**. Missing
 #'   entries take their default values.
 #'
 #' @details
-#' 
+#'
 #' ## ETS codes
-#' 
+#'
 #' An ETS code must have 3 or 4 characters; the possible values for each component are:
 #' - Error: `"A"`, `"M"`, `"Z"`
 #' - Trend: `"N"`, `"A"`, `"M"`, `"Z"`, `"Ad"`, `"Md"`
 #' - Season: `"N"`, `"A"`, `"M"`, `"Z"`
-#' 
+#'
 #' `"A"`: additive,
 #' `"Ad"`: additive damped,
 #' `"M"`: multiplicative,
 #' `"Md"`: multiplicative damped,
 #' `"Z"`: all supported options for that component.
-#' 
+#'
 #' ## Integration methods
 #'
 #' Both methods start from the posterior mode of the smoothing
-#' parameters (mapped to unconstrained space) and the inverse Hessian there. 
-#' Quadrature uses a Gauss-Hermite grid scaled by the inverse Hessian. 
+#' parameters (mapped to unconstrained space) and the inverse Hessian there.
+#' Quadrature uses a Gauss-Hermite grid scaled by the inverse Hessian.
 #' AIS samples a Student-t proposal and adapts it until the effective sample size (ESS)
-#' reaches `min_ess`. 
+#' reaches `min_ess`.
 #' By default (`integration = "auto"`), quadrature is used
 #' for models with up to 2 smoothing parameters (ANN, AAN, ANA) and AIS for
 #' the others (AAdN, AAA, AAdA).
@@ -90,13 +90,13 @@
 #'   [predict.bets()], indexed by `d`. Default `c(200, 300, 500, 500)`.
 #'
 #' Priors:
-#' - `nu0`, `psi0`: parameters of the prior of the error variance \eqn{\sigma^2}, 
-#'   a scaled inverse chi-squared with `nu0` degrees of freedom (default 3, must be >2) 
+#' - `nu0`, `psi0`: parameters of the prior of the error variance \eqn{\sigma^2},
+#'   a scaled inverse chi-squared with `nu0` degrees of freedom (default 3, must be >2)
 #'   and mean `psi0 / (nu0 - 2)`. By default, `psi0` is the
 #'   residual variance of the naive or seasonal naive forecasts.
 #' - `c_inflate_eta`: inflation factor of the prior covariance of the initial
 #'   states, which is set by a heuristic (default 3).
-#' - `phi_min`, `phi_max`: range of the damping parameter (default 0.8 and 0.98). 
+#' - `phi_min`, `phi_max`: range of the damping parameter (default 0.8 and 0.98).
 #'   All smoothing parameters have uniform priors.
 #' - `prior_models`: prior model probabilities for BMA, one per model.
 #'   Default: equal.
@@ -223,7 +223,7 @@ print.bets <- function(x, ...) {
   w <- x$fit$model_weights
   labels <- vapply(mc, ets_label, character(1))
   shown <- shown_models(w)
-  cat("\n  Model weights and posterior means of the parameters:\n")
+  cat("\n  Model weights and posterior means of the parameters:\n\n")
   cat_table(posterior_means_table(x$fit$results[shown], labels[shown], w[shown]))
   cat_negligible(labels, shown)
 
