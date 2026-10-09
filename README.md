@@ -6,8 +6,6 @@
 <!-- badges: start -->
 
 [![R-CMD-check](https://github.com/LorenzoZambon/BayesETS/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/LorenzoZambon/BayesETS/actions/workflows/R-CMD-check.yaml)
-[![Codecov test
-coverage](https://codecov.io/gh/LorenzoZambon/BayesETS/graph/badge.svg)](https://app.codecov.io/gh/LorenzoZambon/BayesETS)
 <!-- badges: end -->
 
 **BayesETS** implements Bayesian ETS (exponential smoothing) state-space
@@ -78,7 +76,9 @@ bets_fit <- bets(y_train, additive.only = TRUE)
 ets_fit  <- ets(y_train, additive.only = TRUE)
 ```
 
-**Overview.** The print methods summarise the two fits:
+### Fitted models
+
+The print methods summarise the two fits:
 
 ``` r
 print(ets_fit)   
@@ -127,8 +127,8 @@ weighs each model according to its posterior probability:
 ets_fit$method
 #> [1] "ETS(A,A,A)"
 
-s <- summary(bets_fit)
-s$models
+summ_bets <- summary(bets_fit)  # summary of the fitted models
+summ_bets$models
 #>   model weight log_evidence
 #> 1   ANN 0.0000     -718.791
 #> 2   AAN 0.0003     -716.425
@@ -139,8 +139,9 @@ s$models
 ```
 
 **Parameters.** For the model selected by `ets()`, ETS(A,A,A), we
-compare the maximum likelihood estimates with the posterior of the same
-model in `bets()` (mean, standard deviation and 95% credible interval):
+compare the maximum likelihood estimates with the posterior distribution
+of the same model in `bets()` (summarised by mean, standard deviation
+and 95% credible interval):
 
 ``` r
 # ets(): maximum likelihood estimates
@@ -148,8 +149,8 @@ round(c(ets_fit$par[c("alpha", "beta", "gamma")], sigma = sqrt(ets_fit$sigma2)),
 #>    alpha     beta    gamma    sigma 
 #>   0.6440   0.0001   0.0001 172.9557
 
-# bets(): posterior of the same model
-post <- s$parameters$AAA
+# bets(): posterior distribution
+post <- summ_bets$parameters$AAA
 post
 #>           mean      sd     2.5%    97.5%
 #> alpha   0.6039  0.0810   0.4513   0.7688
@@ -158,27 +159,25 @@ post
 #> sigma 168.2662 12.4047 146.0917 194.6515
 ```
 
-`ets()` gives a single value for each parameter, while `bets()` gives
-its posterior distribution, summarised here by mean, standard deviation
-and 95% credible interval. For example, `ets()` estimates $\alpha$ =
-0.64, while the 95% credible interval goes from 0.45 to 0.77; and
-`ets()` sets $\beta$ and $\gamma$ to zero (their lower bound: constant
-slope and seasonal pattern), while the posterior also gives weight to
-values up to about 0.17 and 0.26. `bets()` carries this uncertainty into
-the forecasts.
-
-`plot()` shows the posterior distributions of the parameters, one figure
-per model (with the 95% credible interval shaded and the posterior mean
-dashed; `states = TRUE` adds the initial states):
+We can also visualise the posterior distributions of the parameters
+using `plot()`, (includes shaded 95% credible interval and dashed
+posterior mean):
 
 ``` r
-plot(bets_fit, models = "AAA")
+plot(bets_fit, models = "AAA")   # run plot(bets_fit) to see all models with non-negligible weights
 ```
 
 <img src="man/figures/README-posterior-1.png" alt="" width="100%" />
 
-**Forecasts.** Forecasts are obtained with `predict()`, by simulating
-future trajectories.
+The posterior distribution quantifies the uncertainty around the
+parameter estimates. For example, `ets()` estimates $\alpha$ = 0.64,
+while the 95% credible interval of `bets()` goes from 0.45 to 0.77.
+`bets()` carries this uncertainty into the forecasts.
+
+### Forecasts
+
+Forecasts are obtained with `predict()`, by simulating future
+trajectories.
 
 ``` r
 bets_fc <- predict(bets_fit, h = h, level = c(80, 95))
@@ -208,24 +207,24 @@ bets_fc
 
 Finally, we plot the last years of the series with the forecasts of both
 models (80% and 95% prediction intervals) and the observed test set
-(dashed). The intervals of `bets()` account for the uncertainty on the
-parameters and on the model, while those of `ets()` are conditional on
-the estimates of the selected model.
+(dashed). The intervals of `bets()` are larger, as they account for the
+uncertainty on the parameters and on the model, while those of `ets()`
+are conditional on the estimates of the selected model.
 
 <img src="man/figures/README-plot-1.png" alt="" width="100%" />
 
 ## Benchmark
 
-We compare `bets()` and `ets()` (additive models) on all the yearly,
-quarterly and monthly series of the M3 data (2829 series), with the M3
-test sets (horizons 6, 8 and 18):
+We compare `bets()` and `ets()` (additive models only) on all the
+yearly, quarterly and monthly series of the M3 data (2829 series), with
+the M3 test sets (horizons 6, 8 and 18):
 
 - **MASE**: mean absolute error of the point forecasts, scaled by the
   in-sample mean absolute error of the seasonal naive forecast;
 - **Coverage** of the 80% and 95% prediction intervals;
 - **MSIS**: interval score of the 95% intervals, with the same scaling
   (lower is better);
-- **Time**: seconds per series, for fit and forecast.
+- **Time**: seconds per series (includes both fit and forecast).
 
 <table>
 <thead><tr><th>Period (series)</th><th>Method</th><th>MASE</th><th>Coverage 80%</th>
