@@ -32,8 +32,8 @@ weighted posterior particles of each model (quadrature nodes or AIS draws).
 }
 \details{
 The initial states are the level \code{l}, the slope \code{b} and the seasonal states
-\code{s1}, ..., \code{sm} (\code{sm} is the one of the first observation), normalised as in
-\code{forecast::ets()}: the seasonal states sum to zero.
+\code{s1}, ..., \code{sm} (\code{sm} is the one of the first observation),
+normalised to sum to zero.
 }
 \examples{
 set.seed(1)

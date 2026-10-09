@@ -21,8 +21,8 @@ Description: Bayesian exponential smoothing (ETS) state space models for
     by simulating future sample paths. 
     Currently only additive models are supported.
 License: LGPL (>= 3)
-URL: https://github.com/LorenzoZambon/BETS
-BugReports: https://github.com/LorenzoZambon/BETS/issues
+URL: https://github.com/LorenzoZambon/BayesETS
+BugReports: https://github.com/LorenzoZambon/BayesETS/issues
 Encoding: UTF-8
 LazyData: true
 Imports:

@@ -11,8 +11,8 @@ Bayesian exponential smoothing (ETS) state space models for univariate time seri
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/LorenzoZambon/BETS}
-  \item Report bugs at \url{https://github.com/LorenzoZambon/BETS/issues}
+  \item \url{https://github.com/LorenzoZambon/BayesETS}
+  \item Report bugs at \url{https://github.com/LorenzoZambon/BayesETS/issues}
 }
 
 }
