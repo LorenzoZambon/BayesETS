@@ -73,6 +73,7 @@ y_train <- series$x
 y_test  <- series$xx
 h       <- length(y_test)
 
+# Fit the models
 bets_fit <- bets(y_train, additive.only = TRUE)
 ets_fit  <- ets(y_train, additive.only = TRUE)
 ```
@@ -80,7 +81,7 @@ ets_fit  <- ets(y_train, additive.only = TRUE)
 **Overview.** The print methods summarise the two fits:
 
 ``` r
-ets_fit    # selected model, estimates of the parameters and of the initial states
+print(ets_fit)   
 #> ETS(A,A,A) 
 #> 
 #> Call:
@@ -102,7 +103,7 @@ ets_fit    # selected model, estimates of the parameters and of the initial stat
 #>      AIC     AICc      BIC 
 #> 1571.474 1578.591 1616.429
 
-bets_fit   # model weights, posterior means of the parameters
+print(bets_fit)
 #> BETS model fit
 #>   call: bets(y = y_train, additive.only = TRUE)
 #>   length of the series: 104
@@ -119,9 +120,8 @@ bets_fit   # model weights, posterior means of the parameters
 #>   Posterior probability of trend: 1.00, damped trend: 0.32, seasonality: 1.00
 ```
 
-**Models.** `ets()` selects a single model by AICc, while `bets()` gives
-a weight to each model, its posterior probability (from `summary()`,
-with the log evidence of each model):
+**Models.** `ets()` selects a single model by AICc, while `bets()`
+weighs each model according to its posterior probability:
 
 ``` r
 ets_fit$method
@@ -167,8 +167,18 @@ slope and seasonal pattern), while the posterior also gives weight to
 values up to about 0.17 and 0.26. `bets()` carries this uncertainty into
 the forecasts.
 
-Forecasts are obtained with `predict()`, by simulating future
-trajectories.
+`plot()` shows the posterior distributions of the parameters, one figure
+per model (with the 95% credible interval shaded and the posterior mean
+dashed; `states = TRUE` adds the initial states):
+
+``` r
+plot(bets_fit, models = "AAA")
+```
+
+<img src="man/figures/README-posterior-1.png" alt="" width="100%" />
+
+**Forecasts.** Forecasts are obtained with `predict()`, by simulating
+future trajectories.
 
 ``` r
 bets_fc <- predict(bets_fit, h = h, level = c(80, 95))
@@ -232,7 +242,7 @@ test sets (horizons 6, 8 and 18):
 
 The script is in [`benchmark/m3_benchmark.R`](benchmark/m3_benchmark.R).
 
-## Limitations
+## Current limitations
 
 - Only additive models are supported (additive error, trend and
   seasonality).

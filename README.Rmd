@@ -80,50 +80,57 @@ y_train <- series$x
 y_test  <- series$xx
 h       <- length(y_test)
 
+# Fit the models
 bets_fit <- bets(y_train, additive.only = TRUE)
 ets_fit  <- ets(y_train, additive.only = TRUE)
 ```
 
-**Overview.** The print methods summarise the two fits:
+### Fitted models
+
+The print methods summarise the two fits:
 
 ```{r overview}
-ets_fit    # selected model, estimates of the parameters and of the initial states
+print(ets_fit)   
 
-bets_fit   # model weights, posterior means of the parameters
+print(bets_fit)
 ```
 
-**Models.** `ets()` selects a single model by AICc, while `bets()` gives a weight to each model,
-its posterior probability (from `summary()`, with the log evidence of each model):
+**Models.** `ets()` selects a single model by AICc, 
+while `bets()` weighs each model according to its posterior probability:
 
 ```{r models}
 ets_fit$method
 
-s <- summary(bets_fit)
-s$models
+summ_bets <- summary(bets_fit)  # summary of the fitted models
+summ_bets$models
 ```
 
 **Parameters.** For the model selected by `ets()`, ETS(A,A,A), we compare the maximum likelihood
-estimates with the posterior of the same model in `bets()` (mean, standard deviation and 95%
+estimates with the posterior distribution of the same model in `bets()` (summarised by mean, standard deviation and 95%
 credible interval):
 
 ```{r params}
 # ets(): maximum likelihood estimates
 round(c(ets_fit$par[c("alpha", "beta", "gamma")], sigma = sqrt(ets_fit$sigma2)), 4)
 
-# bets(): posterior of the same model
-post <- s$parameters$AAA
+# bets(): posterior distribution
+post <- summ_bets$parameters$AAA
 post
 ```
 
-`ets()` gives a single value for each parameter, while `bets()` gives its posterior
-distribution, summarised here by mean, standard deviation and 95% credible interval.
-For example, `ets()` estimates $\alpha$ = `r round(ets_fit$par[["alpha"]], 2)`, while the 95%
-credible interval goes from `r round(post["alpha", "2.5%"], 2)` to
-`r round(post["alpha", "97.5%"], 2)`; and `ets()` sets $\beta$ and $\gamma$ to zero (their
-lower bound: constant slope and seasonal pattern), while the posterior also gives weight to
-values up to about `r round(post["beta", "97.5%"], 2)` and `r round(post["gamma", "97.5%"], 2)`.
+We can also visualise the posterior distributions of the parameters using `plot()`,
+(includes shaded 95% credible interval and dashed posterior mean):
+```{r posterior, fig.height = 4.5}
+plot(bets_fit, models = "AAA")   # run plot(bets_fit) to see all models with non-negligible weights
+```
+
+The posterior distribution quantifies the uncertainty around the parameter estimates.
+For example, `ets()` estimates $\alpha$ = `r round(ets_fit$par[["alpha"]], 2)`, 
+while the 95% credible interval of `bets()` goes from `r round(post["alpha", "2.5%"], 2)` to
+`r round(post["alpha", "97.5%"], 2)`.
 `bets()` carries this uncertainty into the forecasts.
 
+### Forecasts
 Forecasts are obtained with `predict()`, by simulating future trajectories.
 
 ```{r forecast}
@@ -135,8 +142,8 @@ bets_fc
 
 Finally, we plot the last years of the series with the forecasts of both models
 (80% and 95% prediction intervals) and the observed test set (dashed).
-The intervals of `bets()` account for the uncertainty on the parameters and on the model, while
-those of `ets()` are conditional on the estimates of the selected model.
+The intervals of `bets()` are larger, as they account for the uncertainty on the parameters and on the model, 
+while those of `ets()` are conditional on the estimates of the selected model.
 
 ```{r plot, echo = FALSE, fig.height = 4.5}
 # ---- Data frames for ggplot2 ---------------------------------------------- #
@@ -213,14 +220,14 @@ ggplot() +
 
 ## Benchmark
 
-We compare `bets()` and `ets()` (additive models) on all the yearly, quarterly and monthly
+We compare `bets()` and `ets()` (additive models only) on all the yearly, quarterly and monthly
 series of the M3 data (2829 series), with the M3 test sets (horizons 6, 8 and 18):
 
 - **MASE**: mean absolute error of the point forecasts, scaled by the in-sample mean absolute
   error of the seasonal naive forecast;
 - **Coverage** of the 80% and 95% prediction intervals;
 - **MSIS**: interval score of the 95% intervals, with the same scaling (lower is better);
-- **Time**: seconds per series, for fit and forecast.
+- **Time**: seconds per series (includes both fit and forecast).
 
 ```{r benchmark, echo = FALSE, results = "asis"}
 # HTML table (GitHub markdown has no multirow): one cell per period, spanning ets and bets
@@ -249,7 +256,7 @@ cat("```{=html}", "<table>",
 
 The script is in [`benchmark/m3_benchmark.R`](benchmark/m3_benchmark.R).
 
-## Limitations
+## Current limitations
 
 - Only additive models are supported (additive error, trend and seasonality).
 - The series must not contain missing values.
