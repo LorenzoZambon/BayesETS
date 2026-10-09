@@ -4,48 +4,150 @@
 \alias{bets}
 \title{Fit a Bayesian ETS model}
 \usage{
-bets(y, model = "ZZZ", additive.only = TRUE, control = list())
+bets(
+  y,
+  model = "ZZZ",
+  combination = c("bma", "stacking"),
+  additive.only = TRUE,
+  verbose = 0,
+  control = list()
+)
 }
 \arguments{
 \item{y}{Univariate time series.}
 
-\item{model}{Model space. Use \code{"ZZZ"} (default) to search a predefined set,
-or pass a specific model specification.}
+\item{model}{Models to fit: either an ETS code (made of 3 or 4 characters, see \strong{Details})
+or a vector of ETS codes. Default is \code{"ZZZ"} (all supported models).
+Duplicate models are dropped.}
 
-\item{additive.only}{Logical; if \code{TRUE} (default), multiplicative ETS components are rejected.}
+\item{combination}{How the models are combined; only \code{"bma"} (default) is
+currently supported.}
 
-\item{control}{Named list of tuning parameters. Missing values are filled from
-package defaults. See \strong{Details}.}
+\item{additive.only}{Logical; only \code{TRUE} (default) is currently supported.}
+
+\item{verbose}{\code{0} (default) prints nothing,
+\code{1} prints the model weights,
+\code{2} also prints the progress of each fit.
+\code{TRUE}/\code{FALSE} are accepted as \code{1}/\code{0}.}
+
+\item{control}{Named list of tuning parameters, see \strong{Details}. Missing
+entries take their default values.}
 }
 \value{
-An object of class \code{"bets"}.
+An object of class \code{"bets"}: a list with the series \code{y}, the fit of
+each model and their weights (\code{fit}), the models (\code{model_components}), the
+\code{control} settings as given (with defaults), the value of \code{psi0} used, the
+seasonal \code{period} used for fitting, and the \code{call}.
 }
 \description{
-Fits additive-error ETS variants using adaptive importance sampling,
-then combines models with BMA or stacking.
+Several ETS models are estimated separately in a Bayesian framework;
+a posterior distribution is obtained for the parameters of each model.
+The smoothing parameters are integrated by adaptive Gauss-Hermite quadrature (AGHQ)
+or adaptive importance sampling (AIS);
+the initial states and the error variance are integrated analytically.
+Then the models are combined into a single predictive
+distribution via Bayesian Model Averaging (BMA).
+In this way, both parameter and model uncertainty are accounted for.
+Currently only additive-error models are supported.
 }
 \details{
+\subsection{ETS codes}{
+
+An ETS code must have 3 or 4 characters; the possible values for each component are:
+\itemize{
+\item Error: \code{"A"}, \code{"M"}, \code{"Z"}
+\item Trend: \code{"N"}, \code{"A"}, \code{"M"}, \code{"Z"}, \code{"Ad"}, \code{"Md"}
+\item Season: \code{"N"}, \code{"A"}, \code{"M"}, \code{"Z"}
+}
+
+\code{"A"}: additive,
+\code{"Ad"}: additive damped,
+\code{"M"}: multiplicative,
+\code{"Md"}: multiplicative damped,
+\code{"Z"}: all supported options for that component.
+}
+
+\subsection{Integration methods}{
+
+Both methods start from the posterior mode of the smoothing
+parameters (mapped to unconstrained space) and the inverse Hessian there.
+Quadrature uses a Gauss-Hermite grid scaled by the inverse Hessian.
+AIS samples a Student-t proposal and adapts it until the effective sample size (ESS)
+reaches \code{min_ess}.
+By default (\code{integration = "auto"}), quadrature is used
+for models with up to 2 smoothing parameters (ANN, AAN, ANA) and AIS for
+the others (AAdN, AAA, AAdA).
+}
+
+\subsection{Seasonal period}{
+
+The seasonal period is \code{frequency(y)}.
+Seasonal models need an integer period between 2 and 24, and more than one full period of observations;
+otherwise, only non-seasonal models can be fitted.
+}
+
+\subsection{Constant series}{
+
+A constant series is fitted with ETS(A,N,N), with a warning. The forecasts
+are constant, and the width of the intervals depends on the prior of the
+error variance (set by a heuristic, or by \code{psi0} in \code{control}).
+}
+
 \subsection{Control parameters}{
 
-The \code{control} argument accepts a named list with the following entries:
+The \code{control} argument accepts a named list with the following entries.
+Entries indexed by \code{d} have one value per number of smoothing parameters
+(\code{d} = 1, ..., 4); a scalar applies to all \code{d}.
+
+Integration:
 \itemize{
-\item \code{method}: Combination strategy: \code{"bma"} (Bayesian Model Average, default),
-\code{"stacking"}, or \code{"nmig"} (spike-and-slab model selection).
-\item \code{sampler}: Importance sampling algorithm: \code{"ais"} (single MVT proposal,
-default) or \code{"amis"} (Adaptive Multiple Importance Sampling with a
-mixture of MVT proposals and recycled historical samples).
-\item \code{rao_blackwellize_eta}: Logical; if \code{TRUE}, analytically integrates out
-the initial states (Rao-Blackwellization) instead of sampling them.
-Only supported with \code{sampler = "ais"}. Defaults to \code{TRUE} for seasonal
-series (frequency > 1) and \code{FALSE} otherwise. Note: for non-seasonal
-series (frequency = 1) the parameter space is already low-dimensional
-even without RB, so the same small sample budget applies.
-\item NMIG-specific: \code{v_spike}, \code{v_slab}, \code{w_nmig}.
-\item \code{prior_models}: optional prior model probabilities for BMA.
-\item AMIS-specific: \code{K_mix} (number of mixture components, default 3),
-\code{ridge_eps} (ridge regularization, default 1e-4),
-\code{em_iter} (EM iterations per update, default 5),
-\code{jitter_scale} (initialization jitter, default 0.5).
+\item \code{integration}: \code{"auto"} (default), \code{"quadrature"} or \code{"ais"}.
+Quadrature is not recommended for models with 3 or
+more smoothing parameters.
+\item \code{n_scan}: number of prior points evaluated to start the search of the
+posterior mode. Default 64.
+\item \code{N_draw}: number of AIS draws per iteration, indexed by \code{d}. Default
+\code{c(128, 256, 512, 1024)}. Powers of 2 work best with Sobol points.
+\item \code{min_ess}, \code{N_iter_max}: AIS stops when the effective sample size reaches
+\code{min_ess} (default \code{N_draw / 4}), or after \code{N_iter_max} iterations
+(default 30). In the second case the model gets zero weight; if all
+models do, \code{bets()} stops with an error.
+\item \code{is_df}, \code{is_scale}: degrees of freedom (default 5) and scale inflation
+(default 4) of the AIS proposal.
+\item \code{lr}: maximum weight of the new estimates when the AIS proposal is
+updated (default 0.9).
+\item \code{n_quad}: number of Gauss-Hermite nodes per dimension, indexed by \code{d}.
+Default \code{c(21, 21, 9, 7)}.
+\item \code{N_final}: number of posterior draws kept per model, used by
+\code{\link[=predict.bets]{predict.bets()}}, indexed by \code{d}. Default \code{c(200, 300, 500, 500)}.
+}
+
+Priors:
+\itemize{
+\item \code{nu0}, \code{psi0}: parameters of the prior of the error variance \eqn{\sigma^2},
+a scaled inverse chi-squared with \code{nu0} degrees of freedom (default 3, must be >2)
+and mean \code{psi0 / (nu0 - 2)}. By default, \code{psi0} is the
+residual variance of the naive or seasonal naive forecasts.
+\item \code{c_inflate_eta}: inflation factor of the prior covariance of the initial
+states, which is set by a heuristic (default 3).
+\item \code{phi_min}, \code{phi_max}: range of the damping parameter (default 0.8 and 0.98).
+All smoothing parameters have uniform priors.
+\item \code{prior_models}: prior model probabilities for BMA, one per model.
+Default: equal.
 }
 }
+}
+\examples{
+set.seed(1)
+# Annual series: only additive non-seasonal models (ANN, AAN, AAdN), combined by BMA
+fit <- bets(Nile, additive.only = TRUE)
+fit
+
+# Monthly series: all additive models (ANN, AAN, AAdN, ANA, AAA, AAdA)
+fit_m <- bets(USAccDeaths, additive.only = TRUE)
+fit_m
+
+# Fit only some models
+bets(USAccDeaths, model = c("ANA", "AAA"))
+
 }

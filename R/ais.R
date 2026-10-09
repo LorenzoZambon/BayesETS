@@ -1,355 +1,184 @@
-##############################################################################
-### Adaptive Importance Sampling ###
+################################################################################
+# ADAPTIVE IMPORTANCE SAMPLING (AIS)
+#
+# Samples the smoothing parameters only: the initial states and \sigma^2 are
+# integrated analytically (conjugate prior). The proposal is a Student-t at the
+# posterior mode, adapted while the ESS is below min_ess.
 
-adaptive_is <- function(y, model_components, ctrl,
-                        return_pointwise = FALSE,
-                        use_nmig = FALSE) {
-  N_iter_max <- ctrl$N_iter_max
-  N_draw     <- ctrl$N_draw
-  N_draw_max <- ctrl$N_draw_max
-  N_final    <- ctrl$N_final
-  nu0        <- ctrl$nu0
-  psi0       <- ctrl$psi0
-  phi_min    <- ctrl$phi_min
-  phi_max    <- ctrl$phi_max
-  min_ess    <- ctrl$min_ess
-  eta_df     <- ctrl$eta_df
-  eta_df_incr_per_iter <- ctrl$eta_df_incr_per_iter
-  lr         <- ctrl$lr
-  c_inflate_eta       <- ctrl$c_inflate_eta
-  N_draw_mult         <- ctrl$N_draw_mult
-  first_iter_mult_N   <- ctrl$first_iter_mult_N
-  factor_inflate_Sigma <- ctrl$factor_inflate_Sigma
-  verbose    <- ctrl$verbose
-  v_spike    <- ctrl$v_spike
-  v_slab     <- ctrl$v_slab
-  w_nmig     <- ctrl$w_nmig
+# AIS over the smoothing parameters, from z_start: log evidence and weighted
+# draws of all iterations (theta, w, ml_res); failure: message, or NULL
+integrate_ais <- function(log_g_fn, z_start, theta_names, ctrl,
+                          log_g_mode = log_g_fn) {
+  d <- length(theta_names)
+  N_draw  <- resolve_by_d(ctrl$N_draw, d)
+  min_ess <- if (is.null(ctrl$min_ess)) N_draw / 4 else resolve_by_d(ctrl$min_ess, d)
 
-  L <- length(y)
-  m <- stats::frequency(y)
-  trend <- (model_components[[2]] == "A")
-  seas <- (model_components[[3]] == "A")
-  damped <- (model_components[[4]] == "TRUE")
-  theta_names <- c("alpha", if (trend) c("beta", if (damped) "phi"), if (seas) "gamma")
-
-  prop_params <- init_joint_params(y, model_components, theta_names, eta_df)
-
-  eta_names <- setdiff(colnames(prop_params$Sigma), theta_names)
-  prior_eta_params <- list(
-    mus = prop_params$mus[eta_names],
-    Sigma = prop_params$Sigma[eta_names, eta_names, drop = FALSE] * c_inflate_eta,
-    df = prop_params$df
-  )
-
-  dummy_theta <- matrix(0, nrow = 1, ncol = length(theta_names))
-  colnames(dummy_theta) <- theta_names
-  log_prior_theta_const <- log_prior_theta_uniform(dummy_theta, phi_min, phi_max)[1]
-
-  prev_ess <- 0
-  timing <- list(draw = 0, refit = 0, weight = 0, update = 0, post = 0)
-  do_time <- verbose >= 1
-
-  # Pre-compute once: avoid repeated as.numeric(y) and Cholesky inside the loop
-  y_vec        <- as.numeric(y)
-  R_chol       <- chol(prop_params$Sigma)               # proposal Cholesky
-  R_prior_eta  <- chol(prior_eta_params$Sigma)          # prior-eta Cholesky (constant)
-  d_eta        <- length(eta_names)
-  df_eta       <- prior_eta_params$df
-  mu_eta       <- prior_eta_params$mus
-  log_det_R_pe <- sum(log(diag(R_prior_eta)))
-  lc_eta       <- lgamma((df_eta + d_eta) / 2) - lgamma(df_eta / 2) -
-                   (d_eta / 2) * log(df_eta * pi) - log_det_R_pe
-
-  for (iter in seq_len(N_iter_max)) {
-    if (do_time) t0 <- proc.time()[3]
-    draws <- draw_from_joint_proposal(N_draw, prop_params, theta_names, phi_min, phi_max,
-                                      chol_Sigma = R_chol)
-    theta_samp <- draws$theta
-    eta_samp <- draws$eta
-    if (do_time) timing$draw <- timing$draw + (proc.time()[3] - t0)
-
-    if (do_time) t0 <- proc.time()[3]
-    refit <- RSS_vect_arma(
-      yR = y_vec,
-      trend = trend,
-      seas = seas,
-      damped = damped,
-      m = m,
-      init_statesR = eta_samp,
-      paramsR = theta_samp,
-      return_residuals = return_pointwise
-    )
-    rss <- c(refit$RSS)
-    if (do_time) timing$refit <- timing$refit + (proc.time()[3] - t0)
-
-    if (do_time) t0 <- proc.time()[3]
-    log_lik <- -(nu0 + L) / 2 * log(psi0 + rss)
-    # Prior log-density for eta: MVT(mu_eta, Sigma_eta, df_eta)
-    # lc_eta and R_prior_eta are constant across iterations — computed once above.
-    devs_eta      <- sweep(draws$eta_free, 2, mu_eta, "-")
-    z_eta         <- forwardsolve(t(R_prior_eta), t(devs_eta))
-    mahal_eta     <- colSums(z_eta^2)
-    log_prior_eta <- lc_eta - ((df_eta + d_eta) / 2) * log(1 + mahal_eta / df_eta)
-    log_target <- log_lik + log_prior_eta + log_prior_theta_const
-
-    # --- NMIG spike-and-slab penalty on trend / seasonal initial states ---
-    if (use_nmig) {
-      nmig_cols <- grep("^(b|s\\d+)$", colnames(draws$eta_free), value = TRUE)
-      if (length(nmig_cols) > 0) {
-        nmig_vals <- draws$eta_free[, nmig_cols, drop = FALSE]
-        log_nmig <- rowSums(vapply(
-          seq_len(ncol(nmig_vals)),
-          function(j) log_prior_nmig(nmig_vals[, j], v_spike, v_slab, w_nmig),
-          numeric(nrow(nmig_vals))
-        ))
-        log_target <- log_target + log_nmig
-      }
-    }
-
-    log_w <- log_target - draws$log_density
-    w <- exp(log_w - max(log_w))
-    w <- w / sum(w)
-    ess <- 1 / sum(w^2)
-    if (do_time) timing$weight <- timing$weight + (proc.time()[3] - t0)
-
-    if (verbose >= 2) cat(sprintf("\n\nAdaptive Importance Sampling - iter %d\n", iter))
-    if (verbose >= 2) cat(sprintf("\n ESS = %.1f\n", ess))
-
-    if (ess >= min_ess) break
-    if (iter == N_iter_max) {
-      warning("maximum number of AIS iterations reached")
-      break
-    }
-
-    if (do_time) t0 <- proc.time()[3]
-    prop_params <- update_joint_proposal(
-      theta_unc = draws$theta_unc,
-      eta_free = draws$eta_free,
-      w = w,
-      prev_params = prop_params,
-      lr = lr
-    )
-
-    prop_params$df <- prop_params$df + eta_df_incr_per_iter
-    if (iter >= first_iter_mult_N) {
-      N_draw <- min(as.integer(N_draw * N_draw_mult), N_draw_max)
-    }
-    if (iter > 1 && ess < 0.8 * prev_ess) {
-      prop_params$Sigma <- prop_params$Sigma * factor_inflate_Sigma
-    }
-    R_chol <- chol(prop_params$Sigma)   # recompute once after Sigma update
-    if (do_time) timing$update <- timing$update + (proc.time()[3] - t0)
-    prev_ess <- ess
-  }
-
-  if (do_time) t0 <- proc.time()[3]
-  res_idx <- sample(N_draw, size = N_final, replace = TRUE, prob = w)
-  thetas <- theta_samp[res_idx, , drop = FALSE]
-  etas <- eta_samp[res_idx, , drop = FALSE]
-  states <- refit$states[res_idx, , drop = FALSE]
-  colnames(states) <- colnames(etas)
-  sigma2s <- (psi0 + rss[res_idx]) / stats::rchisq(N_final, df = nu0 + L)
-
-  log_evidence <- max(log_w) + log(mean(exp(log_w - max(log_w))))
-
-  log_lik_pointwise <- NULL
-  if (return_pointwise) {
-    E <- refit$residuals[res_idx, , drop = FALSE]
-    sd_mat <- matrix(sqrt(sigma2s), nrow = nrow(E), ncol = ncol(E), byrow = FALSE)
-    log_lik_pointwise <- stats::dnorm(E, mean = 0, sd = sd_mat, log = TRUE)
-  }
-  if (do_time) timing$post <- timing$post + (proc.time()[3] - t0)
+  ais <- adaptive_importance_sampling(log_g_fn, z_start,
+                                      n_draw = N_draw, min_ess = min_ess,
+                                      df = ctrl$is_df, scale = ctrl$is_scale,
+                                      n_iter_max = ctrl$N_iter_max, lr = ctrl$lr,
+                                      verbose = ctrl$verbose, log_g_mode = log_g_mode)
+  proposal <- ais$proposal
+  names(proposal$mus) <- theta_names
+  rownames(proposal$Sigma) <- colnames(proposal$Sigma) <- theta_names
 
   list(
-    thetas = thetas,
-    etas = etas,
-    states = states,
-    sigma2s = sigma2s,
+    log_evidence = ais$log_evidence,
+    theta = do.call(rbind, lapply(ais$draw_evals, `[[`, "theta")),
+    w = ais$w,
+    ml_res = bind_ml_res(lapply(ais$draw_evals, `[[`, "ml_res")),
+    ess = ais$ess,
+    n_iter = ais$n_iter,
+    proposal = proposal,
+    timing = ais$timing,
+    failure = if (ais$ess < min_ess) {
+      sprintf("AIS: ESS = %.0f below min_ess = %.0f after %d iterations; the model gets zero weight",
+              ais$ess, min_ess, ais$n_iter)
+    }
+  )
+}
+
+
+################################################################################
+# AIS HELPERS
+
+# AIS of g = exp(log g) on R^d (log_g_fn, z_start, log_g_mode as in
+# adaptive_gh_quadrature()). Student-t proposal at the mode of log g, with scale
+# matrix scale * H^{-1}; updated while ESS < min_ess, adding n_draw draws per
+# iteration. The draws of all iterations are pooled and weighted with the
+# mixture of the proposals.
+adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
+                                         df = 5, scale = 4,
+                                         n_iter_max = 30, lr = 0.9,
+                                         verbose = 0, log_g_mode = log_g_fn, ...) {
+  lap <- laplace_mode(log_g_mode, z_start, ...)
+  proposal <- list(mus = lap$zhat, Sigma = scale * tcrossprod(lap$Lmat), df = df)
+  timing <- c(lap$timing, list(draws = 0, update = 0))
+
+  proposals <- list()
+  draw_evals <- list()
+  Z <- NULL
+  log_g <- NULL
+  for (iter in seq_len(n_iter_max)) {
+    # New draws, evaluated in one batch
+    t0 <- proc.time()[3]
+    Z_new <- draw_t_rqmc(n_draw, proposal$mus, proposal$Sigma, proposal$df)
+    draw_eval <- log_g_fn(Z_new)
+    timing$draws <- timing$draws + (proc.time()[3] - t0)
+    proposals[[iter]]  <- c(proposal, list(n = nrow(Z_new)))
+    draw_evals[[iter]] <- draw_eval
+    Z <- rbind(Z, Z_new)
+    log_g <- c(log_g, draw_eval$log_g)
+
+    # Weights of the pooled draws
+    log_w <- log_g - log_mix_density(Z, proposals)
+    log_w[!is.finite(log_w)] <- -Inf
+    lw_max <- max(log_w)
+    if (!is.finite(lw_max)) {
+      w <- NULL
+      log_evidence <- -Inf
+      ess <- 0
+      break
+    }
+    w <- exp(log_w - lw_max)
+    log_evidence <- lw_max + log(mean(w))
+    w <- w / sum(w)
+    ess <- 1 / sum(w^2)
+
+    if (isTRUE(verbose >= 2)) {
+      cat(sprintf("Adaptive Importance Sampling - iteration %d", iter))
+      cat(sprintf("\nESS = %.1f\n", ess))
+    }
+    if (ess >= min_ess || iter == n_iter_max) break
+
+    # Proposal update
+    t0 <- proc.time()[3]
+    proposal <- update_proposal(Z, w, proposal, lr = lr)
+    timing$update <- timing$update + (proc.time()[3] - t0)
+  }
+
+  list(
+    log_evidence = log_evidence,
+    w = w,
+    Z = Z,
+    draw_evals = draw_evals,
     ess = ess,
     n_iter = iter,
-    prop_params = prop_params,
-    log_evidence = log_evidence,
-    log_lik_pointwise = log_lik_pointwise,
+    proposal = proposal,
+    zhat = lap$zhat,
     timing = timing
   )
 }
 
-##############################################################################
-### Stacking Optimization ###
-
-compute_stacking_weights <- function(log_lik_list) {
-  K <- length(log_lik_list)
-  if (K == 0) stop("log_lik_list is empty")
-  if (is.null(log_lik_list[[1]]) || !is.matrix(log_lik_list[[1]])) {
-    stop("Each element of log_lik_list must be a matrix (samples x time)")
-  }
-  L <- ncol(log_lik_list[[1]])
-
-  lpd_model <- matrix(nrow = L, ncol = K)
-  for (k in seq_len(K)) {
-    ll_mat <- log_lik_list[[k]]
-    if (!is.matrix(ll_mat) || ncol(ll_mat) != L) {
-      stop("All log_lik_list elements must be matrices with same number of columns")
-    }
-    S <- nrow(ll_mat)
-    if (S <= 0) stop("Each log-likelihood matrix must have at least one row")
-    max_ll <- apply(ll_mat, 2, max)
-    sum_exp <- colSums(exp(ll_mat - matrix(max_ll, nrow = S, ncol = L, byrow = TRUE)))
-    lpd_model[, k] <- max_ll + log(sum_exp) - log(S)
-  }
-
-  exp_lpd <- exp(lpd_model)
-
-  obj_fun <- function(par) {
-    w <- exp(par) / sum(exp(par))
-    mix_dens <- as.vector(exp_lpd %*% w)
-    -sum(log(pmax(mix_dens, 1e-300)))
-  }
-
-  opt <- stats::optim(rep(0, K), obj_fun, method = "BFGS")
-  w_final <- exp(opt$par) / sum(exp(opt$par))
-
-  w_final[w_final < 1e-3] <- 0
-  if (sum(w_final) <= 0 || any(!is.finite(w_final))) {
-    rep(1 / K, K)
-  } else {
-    w_final / sum(w_final)
-  }
+# n draws from a multivariate Student-t, from randomised Sobol points
+draw_t_rqmc <- function(n, mu, Sigma, df) {
+  d <- length(mu)
+  u <- matrix(qrng::sobol(n, d = d + 1, randomize = "digital.shift"), ncol = d + 1)
+  eps  <- stats::qnorm(u[, seq_len(d), drop = FALSE])
+  chi2 <- stats::qchisq(u[, d + 1], df = df)
+  devs <- (eps %*% chol(Sigma)) / sqrt(chi2 / df)
+  # Drop draws from points exactly on 0 or 1
+  devs <- devs[rowSums(!is.finite(devs)) == 0, , drop = FALSE]
+  sweep(devs, 2, mu, "+")
 }
 
-##############################################################################
-### Model Fitting Wrapper ###
+# Log-density of the mixture of the proposals at the rows of Z (weights: share
+# of the draws)
+log_mix_density <- function(Z, proposals) {
+  n_tot <- sum(vapply(proposals, `[[`, numeric(1), "n"))
+  log_q <- vapply(proposals, function(p) {
+    log(p$n / n_tot) + ldmvt_chol(sweep(Z, 2, p$mus, "-"), chol(p$Sigma), p$df)
+  }, numeric(nrow(Z)))
+  log_q <- matrix(log_q, nrow = nrow(Z))
+  q_max <- apply(log_q, 1, max)
+  q_max + log(rowSums(exp(log_q - q_max)))
+}
 
-fit_bets_models <- function(y,
-                            model_components,
-                            ctrl,
-                            method = c("bma", "stacking", "nmig"),
-                            sampler = c("ais", "amis"),
-                            rao_blackwellize_eta = FALSE) {
-  method <- match.arg(method)
-  sampler <- match.arg(sampler)
-
-  verbose <- ctrl$verbose
-  psi0    <- ctrl$psi0
-
-  m <- stats::frequency(y)
-
-  # --- NMIG: override model_components to a single super-model ------------
-  use_nmig <- (method == "nmig")
-  if (use_nmig) {
-    if (m > 1) {
-      model_components <- list(c("A", "A", "A", "TRUE"))   # ETS(A,Ad,A)
-    } else {
-      model_components <- list(c("A", "A", "N", "TRUE"))   # ETS(A,Ad,N)
-    }
-  }
-
-  n_models <- length(model_components)
-  need_pointwise <- (method == "stacking")
-
-  if (is.null(psi0)) {
-    mse_naive <- mean(diff(y, lag = 1)^2)
-    psi0 <- if (m > 1) 0.5 * (mean(diff(y, lag = m)^2) + mse_naive) else mse_naive
-    ctrl$psi0 <- psi0
-  }
-
-  results_list <- vector("list", n_models)
-  log_marginal_liks <- rep(NA_real_, n_models)
-  log_lik_list <- if (need_pointwise) vector("list", n_models) else NULL
-  fit_time_per_model <- numeric(n_models)
-
-  for (i in seq_along(model_components)) {
-    if (verbose >= 2) cat(sprintf("\nFitting model %d of %d\n", i, n_models))
-    t0 <- proc.time()[3]
-    if (rao_blackwellize_eta) {
-      sampler_fn <- adaptive_is_rb
-    } else {
-      sampler_fn <- if (sampler == "amis") adaptive_mis else adaptive_is
-    }
-    res_i <- sampler_fn(
-      y,
-      model_components[[i]],
-      ctrl = ctrl,
-      return_pointwise = need_pointwise,
-      use_nmig = use_nmig
-    )
-    fit_time_per_model[i] <- proc.time()[3] - t0
-    results_list[[i]] <- res_i
-    results_list[[i]]$model_components <- model_components[[i]]
-    log_marginal_liks[i] <- res_i$log_evidence
-    if (need_pointwise) log_lik_list[[i]] <- res_i$log_lik_pointwise
-  }
-
-  t0 <- proc.time()[3]
-  if (use_nmig) {
-    model_weights <- 1.0
-    if (verbose >= 1) {
-      cat("\nNMIG Spike-and-Slab (single super-model):\n")
-      cat(sprintf("  %-5s: %.3f\n", ets_label(model_components[[1]]), 1.0))
-    }
-  } else if (need_pointwise) {
-    model_weights <- compute_stacking_weights(log_lik_list)
-    if (verbose >= 1) cat("\nStacking Weights:\n")
-  } else {
-    prior_models <- ctrl$prior_models
-    if (is.null(prior_models)) prior_models <- rep(1 / n_models, n_models)
-    log_post_unnorm <- log(prior_models) + log_marginal_liks
-    model_weights <- exp(log_post_unnorm - max(log_post_unnorm))
-    model_weights <- model_weights / sum(model_weights)
-    if (verbose >= 1) cat("\nBMA Weights:\n")
-  }
-  weight_time <- proc.time()[3] - t0
-
-  if (verbose >= 1 && !use_nmig) {
-    labels <- vapply(model_components, ets_label, character(1))
-    for (i in seq_len(n_models)) cat(sprintf("  %-5s: %.3f\n", labels[i], model_weights[i]))
-  }
-
+# Binds the outputs of marginal_likelihood_rb() for several batches of particles
+bind_ml_res <- function(ml_list) {
+  if (length(ml_list) == 1L) return(ml_list[[1]])
+  n_eta <- nrow(ml_list[[1]]$mu_n)
+  n_tot <- sum(vapply(ml_list, function(r) length(r$posterior_scale), numeric(1)))
   list(
-    results = results_list,
-    log_marginal_liks = log_marginal_liks,
-    model_weights = model_weights,
-    timing = list(
-      fit_time_per_model = fit_time_per_model,
-      fit_time_total = sum(fit_time_per_model),
-      weight_time = weight_time,
-      total_time = sum(fit_time_per_model) + weight_time
-    )
+    log_marginal_lik = unlist(lapply(ml_list, function(r) as.numeric(r$log_marginal_lik))),
+    Rn               = array(unlist(lapply(ml_list, `[[`, "Rn")), dim = c(n_eta, n_eta, n_tot)),
+    mu_n             = do.call(cbind, lapply(ml_list, `[[`, "mu_n")),
+    posterior_scale  = unlist(lapply(ml_list, function(r) as.numeric(r$posterior_scale))),
+    final_coef       = array(unlist(lapply(ml_list, `[[`, "final_coef")), dim = c(n_eta, n_eta, n_tot)),
+    final_const      = do.call(cbind, lapply(ml_list, `[[`, "final_const"))
   )
 }
 
-##############################################################################
-### Trajectory Simulation ###
+# Proposal update by weighted moment matching
+update_proposal <- function(theta_unc, w, prev_params,
+                            lr = 0.9, min_var = 1e-6,
+                            lambda_shr = 0.1) {
+  w <- w / sum(w)
+  ess <- 1 / sum(w^2)
 
-simulate_future_trajectories <- function(bets_fit, h = 10, n_traj = 1000) {
-  n_models <- length(bets_fit$results)
-  model_weights <- bets_fit$model_weights
+  new_mus <- colSums(w * theta_unc)
 
-  traj_list <- vector("list", n_models)
-  n_traj_list <- round(n_traj * model_weights)
-  n_traj_list[which.max(n_traj_list)] <- n_traj - sum(n_traj_list) + max(n_traj_list)
+  centered <- sweep(theta_unc, 2, new_mus, "-")
+  Sigma_new <- crossprod(centered * sqrt(w))
 
-  for (i in seq_along(bets_fit$results)) {
-    if (n_traj_list[i] > 0) {
-      idxs <- sample(nrow(bets_fit$results[[i]]$thetas), size = n_traj_list[i], replace = TRUE)
-      res_i <- bets_fit$results[[i]]
-      traj_list[[i]] <- ets_future_traj(
-        model_components = res_i$model_components,
-        states = res_i$states[idxs, , drop = FALSE],
-        params = res_i$thetas[idxs, , drop = FALSE],
-        sigma2s = res_i$sigma2s[idxs],
-        h = h
-      )
-    }
-  }
+  diag_Sigma <- pmax(diag(Sigma_new), min_var)
+  Sigma_new <- (1 - lambda_shr) * Sigma_new
+  diag(Sigma_new) <- diag_Sigma
 
-  do.call(rbind, traj_list)
+  lamb <- min(lr, ess / (100 + ess))
+
+  out_mus <- lamb * new_mus + (1 - lamb) * prev_params$mus
+  out_Sigma <- lamb * Sigma_new + (1 - lamb) * prev_params$Sigma
+
+  list(mus = out_mus, Sigma = out_Sigma, df = prev_params$df)
 }
 
-##############################################################################
-### Helpers ###
-
-ets_label <- function(model_components) {
-  d <- if (model_components[[4]] == "TRUE" && model_components[[2]] == "A") "d" else ""
-  paste0(model_components[[1]], model_components[[2]], d, model_components[[3]])
+# Log-density of a multivariate t, given the upper Cholesky factor of the scale
+ldmvt_chol <- function(devs, chol_R, df) {
+  d           <- ncol(devs)
+  z           <- forwardsolve(t(chol_R), t(devs))
+  mahal       <- colSums(z^2)
+  log_det_R   <- sum(log(diag(chol_R)))
+  log_const   <- lgamma((df + d) / 2) - lgamma(df / 2) - (d / 2) * log(df * pi) - log_det_R
+  log_const - ((df + d) / 2) * log(1 + mahal / df)
 }
