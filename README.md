@@ -239,7 +239,7 @@ the M3 test sets (horizons 6, 8 and 18):
 </tbody>
 </table>
 
-The script is in [`benchmark/m3_benchmark.R`](benchmark/m3_benchmark.R).
+The script is in [`benchmark/m3_benchmark.R`](https://github.com/LorenzoZambon/BayesETS/blob/main/benchmark/m3_benchmark.R).
 
 ## Current limitations
 

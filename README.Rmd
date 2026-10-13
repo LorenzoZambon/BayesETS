@@ -253,7 +253,7 @@ cat("```{=html}", "<table>",
     "<tbody>", rows, "</tbody>", "</table>", "```", sep = "\n")
 ```
 
-The script is in [`benchmark/m3_benchmark.R`](benchmark/m3_benchmark.R).
+The script is in [`benchmark/m3_benchmark.R`](https://github.com/LorenzoZambon/BayesETS/blob/main/benchmark/m3_benchmark.R).
 
 ## Current limitations
 
