@@ -165,3 +165,32 @@ test_that("time_labels() gives months, quarters and years", {
                    c("2020 Q4", "2021 Q1"))
   expect_identical(time_labels(ts(1:2, start = 1999)), c("1999", "2000"))
 })
+
+# ---------------------------------------------------------------------------
+# Plotting
+# ---------------------------------------------------------------------------
+
+test_that("plot.bets_forecast() plots the series and the forecasts, and returns them invisibly", {
+  grDevices::pdf(NULL)
+  on.exit(grDevices::dev.off())
+  fc <- predict(fit_seas, h = 4)
+  expect_false(withVisible(plot(fc))$visible)
+  expect_identical(plot(fc), fc)
+  # x range: from the first of the last `include` observations to the end of the forecasts
+  plot(fc, include = 8)
+  xlim <- c(time(fc$x)[length(fc$x) - 7], time(fc$mean)[4])
+  expect_equal(graphics::par("usr")[1:2], xlim + c(-1, 1) * 0.04 * diff(xlim))
+  # Graphical parameters in ... override the defaults
+  plot(fc, ylim = c(-10, 10))
+  expect_equal(graphics::par("usr")[3:4], c(-10.8, 10.8))
+  expect_no_error(plot(predict(fit_ann, h = 1, level = 90)))
+  expect_error(plot(fc, include = 0), "include must be")
+})
+
+test_that("interval_shade(): lighter for higher levels, between white and the colour", {
+  shades <- interval_shade(c(10, 50, 80, 95, 99), "steelblue")
+  brightness <- colSums(grDevices::col2rgb(shades))
+  expect_true(all(diff(brightness) > 0))
+  expect_true(all(brightness > sum(grDevices::col2rgb("steelblue")) & brightness < 3 * 255))
+  expect_identical(interval_shade(95, "steelblue"), shades[4])
+})

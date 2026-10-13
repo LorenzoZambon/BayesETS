@@ -12,7 +12,11 @@
 #'   Increase it to reduce the Monte Carlo error of the interval bounds.
 #' @param ... Unused.
 #'
-#' @return An object of class `bets_forecast`.
+#' @return An object of class `bets_forecast`, with `print()` and `plot()`
+#'   methods ([plot.bets_forecast()]): a list with the point forecasts `mean`
+#'   and the interval bounds `lower` and `upper` (one column per level), as time
+#'   series after the end of the series, the `level`s, the series `x`, the
+#'   fitted `model` and the `method` ("BETS").
 #'
 #' @examples
 #' set.seed(1)
@@ -22,6 +26,8 @@
 #'
 #' # Set forecast horizon and levels of the prediction intervals
 #' predict(fit, h = 6, level = c(50, 90))
+#'
+#' plot(predict(fit, h = 24))
 #'
 #' @export
 predict.bets <- function(object, newdata = NULL, h = NULL, level = c(80, 95),
@@ -93,6 +99,65 @@ print.bets_forecast <- function(x, ...) {
   rownames(out) <- time_labels(x$mean)
   print(out, ...)
   invisible(x)
+}
+
+#' Plot BETS forecasts
+#'
+#' Plots the series, the point forecasts and the prediction intervals
+#' (the higher the level, the lighter its shade). 
+#'
+#' @param x A forecast object from [predict.bets()].
+#' @param include Number of past observations of the series to plot.
+#'   Default: all.
+#' @param main Title of the plot. Default: none.
+#' @param ... Graphical parameters passed to [graphics::plot()], e.g. `xlab`,
+#'   `ylab` or `ylim`.
+#'
+#' @return `x`, invisibly.
+#'
+#' @examples
+#' set.seed(1)
+#' fit <- bets(USAccDeaths)
+#' plot(predict(fit, h = 24), include = 36)
+#'
+#' @export
+plot.bets_forecast <- function(x, include = NULL, main = NULL, ...) {
+  y <- x$x
+  if (!is.null(include)) {
+    if (!is_count(include)) stop("include must be a single positive integer")
+    if (include < length(y)) y <- stats::window(y, start = stats::time(y)[length(y) - include + 1])
+  }
+  t_fc <- as.numeric(stats::time(x$mean))
+  args <- utils::modifyList(
+    list(x = NA, type = "n", main = main, xlab = "", ylab = "",
+         xlim = range(stats::time(y), t_fc), ylim = range(y, x$lower, x$upper)),
+    list(...))
+  do.call(graphics::plot, args)
+
+  # Intervals from the widest to the narrowest, each one covering the previous
+  col <- "steelblue"
+  graphics::lines(y)
+  for (j in rev(seq_along(x$level))) {
+    shade <- interval_shade(x$level[j], col)
+    if (length(t_fc) > 1) {
+      graphics::polygon(c(t_fc, rev(t_fc)), c(x$lower[, j], rev(x$upper[, j])), col = shade, border = NA)
+    } else {
+      graphics::segments(t_fc, x$lower[, j], t_fc, x$upper[, j], col = shade, lwd = 8, lend = 1)
+    }
+  }
+  if (length(t_fc) > 1) {
+    graphics::lines(t_fc, x$mean, col = col, lwd = 2)
+  } else {
+    graphics::points(t_fc, x$mean, col = col, pch = 19)
+  }
+  invisible(x)
+}
+
+# Opaque shade of a prediction interval, between white and col: lighter for
+# higher levels, and the same for the same level in every plot
+interval_shade <- function(level, col) {
+  ramp <- grDevices::colorRamp(c("white", col))
+  grDevices::rgb(ramp(0.15 + 0.75 * sqrt(1 - level / 100)), maxColorValue = 255)
 }
 
 # Labels of the time points of a ts: "Jan 2020" (monthly), "2020 Q1" (quarterly),
