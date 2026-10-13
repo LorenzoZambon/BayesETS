@@ -139,7 +139,7 @@ init_eta_params <- function(y, model_components,
       b <- y[2] - y[1]
     }
     var_b <- var_b_mult * stats::var(seas_diffs / n_lags)
-    var_b <- max(var_b, .FB_MULT * var_l, na.rm = T)
+    var_b <- max(var_b, .FB_MULT * var_l, na.rm = TRUE)
     init_mu <- c(init_mu, b)
     init_var <- c(init_var, var_b)
   }
@@ -150,7 +150,7 @@ init_eta_params <- function(y, model_components,
     y_mat <- matrix(c(y, rep(NA, -L %% m)), nrow = m)
     seas_vars <- apply(y_mat, 2, stats::var, na.rm = TRUE)
     var_s_raw <- var_s_mult * mean(seas_vars, na.rm = TRUE)
-    var_s_raw <- max(var_s_raw, .FB_MULT * var_l, na.rm = T)
+    var_s_raw <- max(var_s_raw, .FB_MULT * var_l, na.rm = TRUE)
     var_s <- rep(var_s_raw, m - 1)
     init_mu <- c(init_mu, s)
     init_var <- c(init_var, var_s)
