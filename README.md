@@ -46,7 +46,57 @@ The package contains C++ code: installing it from GitHub requires a
 compiler (Rtools on Windows, the Xcode command line tools on macOS, a
 C++ compiler on Linux).
 
-## Example: M3 monthly series
+## Basic usage
+
+`bets()` fits the ETS models to a time series and combines them by BMA;
+`predict()` computes the forecasts.
+
+``` r
+library(BayesETS)
+set.seed(123)   # the fit and the forecasts use random draws
+
+fit <- bets(USAccDeaths)   # monthly accidental deaths in the USA, 1973-1978
+print(fit)  # for each model, show weight and posterior means of its parameters
+#> BETS model fit
+#>   call: bets(y = USAccDeaths)
+#>   length of the series: 72
+#>   frequency: 12
+#>   combination: Bayesian Model Averaging
+#> 
+#>   Model weights and posterior means of the parameters:
+#> 
+#>   model  weight  alpha   beta    phi  gamma  sigma
+#>   ANA     0.814  0.551      -      -  0.255  308.5
+#>   AAdA    0.148  0.535  0.049  0.880  0.244  309.6
+#>   AAA     0.038  0.567  0.039      -  0.236  312.2
+#>   (weight < 0.001: ANN, AAN, AAdN)
+#> 
+#>   Posterior probability of trend: 0.19, damped trend: 0.15, seasonality: 1.00
+
+fc <- predict(fit, h = 12)   # 80% and 95% prediction intervals by default
+print(fc)
+#>          Point Forecast     Lo 80     Hi 80    Lo 95     Hi 95
+#> Jan 1979       8301.766  7881.922  8716.267 7689.171  8967.764
+#> Feb 1979       7546.384  7091.786  8027.522 6829.061  8281.420
+#> Mar 1979       8349.965  7849.881  8864.435 7596.950  9184.256
+#> Apr 1979       8590.429  8035.455  9168.001 7729.537  9445.045
+#> May 1979       9426.844  8830.162 10030.944 8501.737 10389.267
+#> Jun 1979       9818.899  9144.074 10474.138 8776.390 10868.761
+#> Jul 1979      10786.722 10162.419 11433.339 9744.499 11793.567
+#> Aug 1979       9958.223  9203.702 10664.917 8836.971 11027.103
+#> Sep 1979       9004.657  8267.894  9770.697 7821.702 10223.417
+#> Oct 1979       9247.677  8476.658 10052.002 7950.219 10525.371
+#> Nov 1979       8805.281  7970.547  9643.714 7484.997 10109.968
+#> Dec 1979       9219.098  8315.700 10049.489 7804.549 10641.805
+
+plot(fc)
+```
+
+<img src="man/figures/README-basic-fit-1.png" alt="" width="100%" />
+
+## Comparison with `forecast::ets()`
+
+### Example: M3 monthly series
 
 We fit `bets()` and `ets()` (from the forecast package) to a monthly
 series of the M3 competition, and compare the fitted models and their
@@ -57,15 +107,11 @@ probabilities; within each model, it integrates over the posterior of
 the parameters.
 
 ``` r
-library(BayesETS)
 library(forecast)   # for comparison with ets()
 library(Mcomp)      # M3 competition data
 library(ggplot2)    # for plot
-
 set.seed(123)
-```
 
-``` r
 series  <- M3[["N2542"]]
 y_train <- series$x
 y_test  <- series$xx
@@ -74,50 +120,6 @@ h       <- length(y_test)
 # Fit the models
 bets_fit <- bets(y_train, additive.only = TRUE)
 ets_fit  <- ets(y_train, additive.only = TRUE)
-```
-
-### Fitted models
-
-The print methods summarise the two fits:
-
-``` r
-print(ets_fit)   
-#> ETS(A,A,A) 
-#> 
-#> Call:
-#> ets(y = y_train, additive.only = TRUE)
-#> 
-#>   Smoothing parameters:
-#>     alpha = 0.644 
-#>     beta  = 1e-04 
-#>     gamma = 1e-04 
-#> 
-#>   Initial states:
-#>     l = 3195.5107 
-#>     b = 75.2202 
-#>     s = 313.7041 -77.6393 -157.02 -175.1816 -95.0358 -120.3575
-#>            -140.7705 -33.6367 213.9919 109.4593 93.6201 68.8661
-#> 
-#>   sigma:  172.9557
-#> 
-#>      AIC     AICc      BIC 
-#> 1571.474 1578.591 1616.429
-
-print(bets_fit)
-#> BETS model fit
-#>   call: bets(y = y_train, additive.only = TRUE)
-#>   length of the series: 104
-#>   frequency: 12
-#>   combination: Bayesian Model Averaging
-#> 
-#>   Model weights and posterior means of the parameters:
-#> 
-#>   model  weight  alpha   beta    phi  gamma  sigma
-#>   AAA     0.670  0.602  0.058      -  0.098  170.5
-#>   AAdA    0.329  0.486  0.187  0.903  0.100  172.3
-#>   (weight < 0.001: ANN, AAN, AAdN, ANA)
-#> 
-#>   Posterior probability of trend: 1.00, damped trend: 0.33, seasonality: 1.00
 ```
 
 **Models.** `ets()` selects a single model by AICc, while `bets()`
@@ -160,7 +162,7 @@ post
 ```
 
 We can also visualise the posterior distributions of the parameters
-using `plot()`, (includes shaded 95% credible interval and dashed
+using `plot()` (includes shaded 95% credible interval and dashed
 posterior mean):
 
 ``` r
@@ -170,61 +172,38 @@ plot(bets_fit, models = "AAA")   # run plot(bets_fit) to see all models with non
 <img src="man/figures/README-posterior-1.png" alt="" width="100%" />
 
 The posterior distribution quantifies the uncertainty around the
-parameter estimates. For example, `ets()` estimates $\alpha$ = 0.64,
-while the 95% credible interval of `bets()` goes from 0.45 to 0.77.
+parameter estimates. For example, `ets()` estimates $\hat\alpha$ = 0.64,
+while the 95% credible interval of `bets()` goes from 0.45 to 0.77;
 `bets()` carries this uncertainty into the forecasts.
 
-### Forecasts
-
-Forecasts are obtained with `predict()`, by simulating future
-trajectories.
+**Forecasts.** We compute the forecasts of both models over the test
+set:
 
 ``` r
 bets_fc <- predict(bets_fit, h = h, level = c(80, 95))
 ets_fc  <- forecast(ets_fit, h = h, level = c(80, 95))
-
-bets_fc
-#>          Point Forecast    Lo 80    Hi 80     Lo 95    Hi 95
-#> Sep 1992       10348.41 10120.53 10584.05 10005.313 10730.18
-#> Oct 1992       10445.74 10152.59 10724.37 10021.855 10889.51
-#> Nov 1992       10622.29 10272.20 10976.90 10118.067 11150.25
-#> Dec 1992       11099.93 10712.85 11527.76 10477.252 11754.82
-#> Jan 1993       10892.65 10445.83 11373.78 10107.624 11623.88
-#> Feb 1993       10986.59 10491.50 11524.47 10109.697 11779.04
-#> Mar 1993       11078.16 10484.53 11655.58 10120.838 11988.42
-#> Apr 1993       11199.94 10558.13 11849.94 10193.573 12222.10
-#> May 1993       11055.64 10358.38 11784.70  9828.543 12136.87
-#> Jun 1993       11015.49 10267.13 11760.91  9752.892 12163.85
-#> Jul 1993       11102.00 10254.18 11960.52  9691.037 12481.32
-#> Aug 1993       11211.86 10295.76 12076.58  9718.016 12663.26
-#> Sep 1993       11217.74 10201.11 12197.59  9553.297 12851.02
-#> Oct 1993       11301.99 10240.13 12402.02  9559.822 13048.75
-#> Nov 1993       11466.51 10256.57 12597.57  9593.633 13322.55
-#> Dec 1993       11927.56 10682.51 13130.53  9895.618 13973.63
-#> Jan 1994       11724.55 10392.43 13035.97  9675.835 13872.25
-#> Feb 1994       11794.58 10328.25 13151.88  9548.734 14060.26
 ```
 
-Finally, we plot the last years of the series with the forecasts of both
-models (80% and 95% prediction intervals) and the observed test set
-(dashed). The intervals of `bets()` are larger, as they account for the
+We plot the last years of the series with the forecasts of both models
+(80% and 95% prediction intervals) and the observed test set (dashed).
+The intervals of `bets()` are larger, as they account for the
 uncertainty on the parameters and on the model, while those of `ets()`
 are conditional on the estimates of the selected model.
 
 <img src="man/figures/README-plot-1.png" alt="" width="100%" />
 
-## Benchmark
+### Benchmark on the M3 data
 
 We compare `bets()` and `ets()` (additive models only) on all the
-yearly, quarterly and monthly series of the M3 data (2829 series), with
-the M3 test sets (horizons 6, 8 and 18):
+yearly, quarterly and monthly series of the M3 dataset (2829 series),
+with the M3 test sets (horizons 6, 8 and 18):
 
-- **MASE**: mean absolute error of the point forecasts, scaled by the
-  in-sample mean absolute error of the seasonal naive forecast;
-- **Coverage** of the 80% and 95% prediction intervals;
+- **MASE**: mean absolute error (MAE) of the point forecasts, scaled by
+  the in-sample MAE of the seasonal naive forecast;
 - **MSIS**: interval score of the 95% intervals, with the same scaling
   (lower is better);
-- **Time**: seconds per series (includes both fit and forecast).
+- **Coverage** of the 80% and 95% prediction intervals;
+- **Time**: average time per series (includes both fit and forecast).
 
 <table>
 <thead><tr><th>Period (series)</th><th>Method</th><th>MASE</th><th>Coverage 80%</th>
@@ -239,7 +218,8 @@ the M3 test sets (horizons 6, 8 and 18):
 </tbody>
 </table>
 
-The script is in [`benchmark/m3_benchmark.R`](https://github.com/LorenzoZambon/BayesETS/blob/main/benchmark/m3_benchmark.R).
+The script is in
+[`benchmark/m3_benchmark.R`](https://github.com/LorenzoZambon/BayesETS/blob/main/benchmark/m3_benchmark.R).
 
 ## Current limitations
 

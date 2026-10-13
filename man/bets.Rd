@@ -2,7 +2,7 @@
 % Please edit documentation in R/bets.R
 \name{bets}
 \alias{bets}
-\title{Fit a Bayesian ETS model}
+\title{Fit a BETS (Bayesian ETS) model}
 \usage{
 bets(
   y,

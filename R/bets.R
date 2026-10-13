@@ -1,4 +1,4 @@
-#' Fit a Bayesian ETS model
+#' Fit a BETS (Bayesian ETS) model
 #'
 #' Several ETS models are estimated separately in a Bayesian framework;
 #' a posterior distribution is obtained for the parameters of each model.
