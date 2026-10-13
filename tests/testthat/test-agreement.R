@@ -34,11 +34,11 @@ sim_ets <- function(code, freq, seed) {
   stats::ts(y, frequency = freq)
 }
 
-# Fit a single model specification through fit_bets_models() (default psi0, as in bets()).
+# Fit a single model specification through fit_bets_models() (default prior scales, as in bets()).
 fit_single <- function(y, code, control, integration = "ais") {
   freq <- stats::frequency(y)
   ctrl <- resolve_bets_control(control)
-  ctrl$psi0 <- default_psi0(y)
+  ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
   fit_bets_models(y, coerce_model_components(code, freq), ctrl,
                          integration = integration)$results[[1]]
 }

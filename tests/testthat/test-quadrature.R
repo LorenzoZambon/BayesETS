@@ -75,7 +75,7 @@ test_that("fit_one_model() returns the same fields with quadrature and AIS", {
   y <- ts(cumsum(rnorm(30)) + 10, frequency = 4)
   for (mc in list(c("A", "N", "N", "FALSE"), c("A", "A", "A", "TRUE"))) {
     ctrl <- resolve_bets_control(list())
-    ctrl$psi0 <- mean(diff(y)^2)
+    ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
     res_ais  <- fit_one_model(y, mc, ctrl, "ais")
     res_quad <- fit_one_model(y, mc, ctrl, "quadrature")
     expect_named(res_quad, names(res_ais))
@@ -103,7 +103,7 @@ test_that("quadrature works with stacking (pointwise log-likelihoods)", {
   set.seed(1)
   y <- ts(rnorm(30))
   ctrl <- resolve_bets_control(list(N_final = 50L))
-  ctrl$psi0 <- default_psi0(y)
+  ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
   fit <- fit_bets_models(y, coerce_model_components(list("ANN", "AAN"), 1),
                                 ctrl, combination = "stacking", integration = "quadrature")
   expect_equal(dim(fit$results[[1]]$log_lik_pointwise), c(50L, 30L))

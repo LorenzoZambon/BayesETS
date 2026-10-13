@@ -24,7 +24,6 @@ License: LGPL (>= 3)
 URL: https://github.com/LorenzoZambon/BayesETS
 BugReports: https://github.com/LorenzoZambon/BayesETS/issues
 Encoding: UTF-8
-LazyData: true
 Imports:
   Rcpp (>= 1.1.0),
   graphics,

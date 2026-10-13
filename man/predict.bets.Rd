@@ -29,7 +29,11 @@ Increase it to reduce the Monte Carlo error of the interval bounds.}
 \item{...}{Unused.}
 }
 \value{
-An object of class \code{bets_forecast}.
+An object of class \code{bets_forecast}, with \code{print()} and \code{plot()}
+methods (\code{\link[=plot.bets_forecast]{plot.bets_forecast()}}): a list with the point forecasts \code{mean}
+and the interval bounds \code{lower} and \code{upper} (one column per level), as time
+series after the end of the series, the \code{level}s, the series \code{x}, the
+fitted \code{model} and the \code{method} ("BETS").
 }
 \description{
 Forecast distribution of a fitted \code{bets} object, from simulated
@@ -43,5 +47,7 @@ fc
 
 # Set forecast horizon and levels of the prediction intervals
 predict(fit, h = 6, level = c(50, 90))
+
+plot(predict(fit, h = 24))
 
 }

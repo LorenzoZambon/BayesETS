@@ -163,6 +163,7 @@ initial_states_particles <- function(object, i) {
 
   ctrl <- object$control
   ctrl$psi0 <- object$psi0
+  ctrl$s2 <- object$s2
   shift <- centring_shift(y)
   y <- y - shift
   mc <- r$model_components
