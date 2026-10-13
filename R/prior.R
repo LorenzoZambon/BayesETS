@@ -30,10 +30,10 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
     eta0_r_order <- eta0_free
   }
 
-  # eta | \sigma^2 ~ N(eta0, \sigma^2 V0), with V0 = Sigma / E[\sigma^2]: prior
-  # covariance Sigma at the prior mean of \sigma^2
+  # eta | \sigma^2 ~ N(eta0, \sigma^2 V0), with V0 = Sigma / s2: prior covariance
+  # Sigma at \sigma^2 = s2, the data-based estimate of the error variance
   Sigma_heuristic_free <- eta_init$Sigma * c_inflate_eta
-  prior_mean_sigma2 <- psi0 / (ctrl$nu0 - 2)
+  s2 <- ctrl$s2
 
   # Independent priors on all m seasonal states, without the sum-to-zero
   # constraint: the prior fixes the shift (l0 + c, s - c) that the data cannot
@@ -59,10 +59,10 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
     reorder <- c(non_s_idx, s_idx_cpp)
 
     eta0_cpp <- as.numeric(eta0_r_order[reorder])
-    V0 <- Sigma_full[reorder, reorder, drop = FALSE] / prior_mean_sigma2
+    V0 <- Sigma_full[reorder, reorder, drop = FALSE] / s2
   } else {
     eta0_cpp <- as.numeric(eta0_r_order)
-    V0 <- Sigma_full / prior_mean_sigma2
+    V0 <- Sigma_full / s2
   }
 
   log_prior_theta_const <- log_prior_theta_uniform(theta_names, phi_min, phi_max)
@@ -75,14 +75,24 @@ init_rb_prior <- function(y, model_components, theta_names, ctrl) {
   )
 }
 
-# Default psi0: variance of the naive or (if smaller) of the seasonal naive residuals,
-# floored to stay positive for deterministic series; heuristic for constant series.
-default_psi0 <- function(y) {
+# Scales of the priors: s2, an estimate of the error variance, is the prior median of
+# \sigma^2 (psi0 = s2 qchisq(0.5, nu0), unless psi0 is set in control) and sets the
+# scale of the prior of the initial states (V0 = Sigma / s2)
+prior_scales <- function(y, ctrl) {
+  s2 <- default_s2(y)
+  psi0 <- if (is.null(ctrl$psi0)) stats::qchisq(0.5, ctrl$nu0) * s2 else ctrl$psi0
+  list(psi0 = psi0, s2 = s2)
+}
+
+# Estimate of the error variance: variance of the naive or (if smaller) of the seasonal
+# naive residuals, floored to stay positive for deterministic series; heuristic for
+# constant series.
+default_s2 <- function(y) {
   if (all(y == y[1])) return((0.2 * (if (y[1] != 0) abs(y[1]) else 1))^2)
   m <- stats::frequency(y)
-  psi0 <- stats::var(diff(y))
-  if (m > 1) psi0 <- min(psi0, stats::var(diff(y, lag = m)), na.rm = TRUE)
-  max(psi0, 1e-8 * stats::var(y))
+  s2 <- stats::var(diff(y))
+  if (m > 1) s2 <- min(s2, stats::var(diff(y, lag = m)), na.rm = TRUE)
+  max(s2, 1e-8 * stats::var(y))
 }
 
 # Log-density of the uniform prior of the smoothing parameters (a constant)

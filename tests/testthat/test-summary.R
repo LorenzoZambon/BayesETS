@@ -123,6 +123,7 @@ test_that("the posterior evaluated again at the particles is the one of the fit"
     r <- fit_seas$fit$results[[i]]
     ctrl <- fit_seas$control
     ctrl$psi0 <- fit_seas$psi0
+    ctrl$s2 <- fit_seas$s2
     y <- stats::ts(as.numeric(fit_seas$y), frequency = fit_seas$period)
     y <- y - centring_shift(y)
     tn <- colnames(r$particles$theta)

@@ -37,6 +37,7 @@ entries take their default values.}
 An object of class \code{"bets"}: a list with the series \code{y}, the fit of
 each model and their weights (\code{fit}), the models (\code{model_components}), the
 \code{control} settings as given (with defaults), the value of \code{psi0} used, the
+estimate \code{s2} of the error variance that sets the scales of the priors, the
 seasonal \code{period} used for fitting, and the \code{call}.
 }
 \description{
@@ -126,10 +127,13 @@ Priors:
 \itemize{
 \item \code{nu0}, \code{psi0}: parameters of the prior of the error variance \eqn{\sigma^2},
 a scaled inverse chi-squared with \code{nu0} degrees of freedom (default 3, must be >2)
-and mean \code{psi0 / (nu0 - 2)}. By default, \code{psi0} is the
-residual variance of the naive or seasonal naive forecasts.
+and mean \code{psi0 / (nu0 - 2)}. By default, \code{psi0} is set so that the prior
+median of \eqn{\sigma^2} is \eqn{s^2}, the residual variance of the naive or
+(if smaller) seasonal naive forecasts.
 \item \code{c_inflate_eta}: inflation factor of the prior covariance of the initial
-states, which is set by a heuristic (default 3).
+states (default 3). Given \eqn{\sigma^2}, the initial states have a normal
+prior with covariance \eqn{c\,\Sigma\,\sigma^2 / s^2}, where \eqn{c} is
+\code{c_inflate_eta} and \eqn{\Sigma} is set by a heuristic.
 \item \code{phi_min}, \code{phi_max}: range of the damping parameter (default 0.8 and 0.98).
 All smoothing parameters have uniform priors.
 \item \code{prior_models}: prior model probabilities for BMA, one per model.

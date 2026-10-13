@@ -56,7 +56,7 @@ test_that("fit_one_model() with AIS returns posterior draws, ESS and proposal", 
   y <- ts(cumsum(rnorm(30)) + 10, frequency = 4)
   for (mc in list(c("A", "N", "N", "FALSE"), c("A", "A", "A", "TRUE"))) {
     ctrl <- resolve_bets_control(list())
-    ctrl$psi0 <- mean(diff(y)^2)
+    ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
     res <- fit_one_model(y, mc, ctrl, "ais")
     d <- if (mc[[2]] == "N") 1 else 4
     expect_named(res, c("thetas", "etas", "states", "sigma2s", "particles", "ess", "n_iter",
@@ -73,7 +73,7 @@ test_that("fit_one_model() with AIS gives zero weight when min_ess is not reache
   set.seed(1)
   y <- ts(rnorm(20))
   ctrl <- resolve_bets_control(list(min_ess = 1e6, N_iter_max = 2))
-  ctrl$psi0 <- mean(diff(y)^2)
+  ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
   expect_warning(res <- fit_one_model(y, c("A", "N", "N", "FALSE"), ctrl, "ais"),
                  "zero weight")
   expect_equal(res$log_evidence, -Inf)

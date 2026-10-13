@@ -7,7 +7,7 @@ test_that("co2 ETS(A,A,A): no spurious evidence from exploding recursions", {
   # at 0 gave log evidence ~ +600 instead of ~ -141
   mc <- coerce_model_components("AAA", 12)
   ctrl <- resolve_bets_control(list(N_final = 50L))
-  ctrl$psi0 <- default_psi0(co2)
+  ctrl <- utils::modifyList(ctrl, prior_scales(co2, ctrl))
   le <- vapply(c("quadrature", "ais"), function(im) {
     set.seed(1)
     fit_bets_models(co2, mc, ctrl, integration = im)$results[[1]]$log_evidence
@@ -22,7 +22,7 @@ test_that("lost-precision evaluations are invalid, not spikes (uncentred co2)", 
   tn <- c("alpha", "beta", "gamma")
   make_lg <- function(y) {
     ctrl <- resolve_bets_control(list())
-    ctrl$psi0 <- 0.5 * (mean(diff(y, lag = 12)^2) + mean(diff(y)^2))
+    ctrl$psi0 <- ctrl$s2 <- 0.5 * (mean(diff(y, lag = 12)^2) + mean(diff(y)^2))
     make_log_g_rb(y, mc, tn, ctrl, init_rb_prior(y, mc, tn, ctrl))
   }
   set.seed(1)
@@ -49,7 +49,7 @@ test_that("the mode search is not trapped in the unstable region (nottem, AAN)",
   mc <- c("A", "A", "N", "FALSE")
   tn <- c("alpha", "beta")
   ctrl <- resolve_bets_control(list())
-  ctrl$psi0 <- 0.5 * (mean(diff(nottem, lag = 12)^2) + mean(diff(nottem)^2))
+  ctrl$psi0 <- ctrl$s2 <- 0.5 * (mean(diff(nottem, lag = 12)^2) + mean(diff(nottem)^2))
   lg <- make_log_g_rb(y, mc, tn, ctrl, init_rb_prior(y, mc, tn, ctrl))
   set.seed(1)
   best_of_1024 <- prior_scan(lg, tn, n_scan = 1024)$log_g[1]
@@ -62,28 +62,42 @@ test_that("the mode search is not trapped in the unstable region (nottem, AAN)",
 # Priors of sigma^2 and of the initial states
 # ---------------------------------------------------------------------------
 
-test_that("default_psi0() is the smaller residual variance of naive and seasonal naive", {
+test_that("default_s2() is the smaller residual variance of naive and seasonal naive", {
   set.seed(1)
   y <- ts(cumsum(rnorm(48)) + rep(10 * sin(2 * pi * (1:12) / 12), 4), frequency = 12)
-  expect_equal(default_psi0(y), min(var(diff(y)), var(diff(y, lag = 12))))
+  expect_equal(default_s2(y), min(var(diff(y)), var(diff(y, lag = 12))))
   # A drift does not count: variance, not mean square, of the differences
   y1 <- ts(cumsum(rnorm(30)) + 5 * (1:30))
-  expect_equal(default_psi0(y1), var(diff(y1)))
+  expect_equal(default_s2(y1), var(diff(y1)))
   # Positive for deterministic series
-  expect_gt(default_psi0(ts(1:20)), 0)
+  expect_gt(default_s2(ts(1:20)), 0)
 })
 
-test_that("the initial-state prior depends on nu0 and psi0 only through E[sigma^2]", {
+test_that("the prior median of sigma^2 is s2, unless psi0 is set", {
+  set.seed(1)
+  y <- ts(cumsum(rnorm(30)))
+  for (nu0 in c(3, 10)) {
+    sc <- prior_scales(y, resolve_bets_control(list(nu0 = nu0)))
+    expect_equal(sc$s2, default_s2(y))
+    # P(sigma^2 <= s2) = P(chi^2_nu0 >= psi0 / s2)
+    expect_equal(pchisq(sc$psi0 / sc$s2, nu0, lower.tail = FALSE), 0.5)
+  }
+  expect_equal(prior_scales(y, resolve_bets_control(list(psi0 = 2))),
+               list(psi0 = 2, s2 = default_s2(y)))
+})
+
+test_that("the initial-state prior depends on s2, not on nu0 and psi0", {
   set.seed(1)
   y <- ts(cumsum(rnorm(30)))
   mc <- c("A", "A", "N", "FALSE")
   tn <- c("alpha", "beta")
-  V0 <- function(nu0, psi0) {
+  V0 <- function(nu0, psi0, s2) {
     ctrl <- resolve_bets_control(list(nu0 = nu0, psi0 = psi0))
+    ctrl$s2 <- s2
     init_rb_prior(y, mc, tn, ctrl)$V0
   }
-  expect_equal(V0(nu0 = 3, psi0 = 2), V0(nu0 = 10, psi0 = 16))   # E[sigma^2] = 2
-  expect_equal(V0(nu0 = 3, psi0 = 4), V0(nu0 = 3, psi0 = 2) / 2)
+  expect_equal(V0(nu0 = 3, psi0 = 2, s2 = 1), V0(nu0 = 10, psi0 = 50, s2 = 1))
+  expect_equal(V0(nu0 = 3, psi0 = 2, s2 = 2), V0(nu0 = 3, psi0 = 2, s2 = 1) / 2)
 })
 
 test_that("bets() fits deterministic series (straight line, trend + exact seasonality)", {
@@ -99,7 +113,7 @@ test_that("final states from the affine maps of the C++ kernel match the recursi
   set.seed(1)
   y <- ts(10 + cumsum(rnorm(30)) + rep(c(2, -1, 0, -1), length.out = 30), frequency = 4)
   ctrl <- resolve_bets_control(list(N_final = 20L))
-  ctrl$psi0 <- default_psi0(y)
+  ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
   for (code in c("ANN", "AAN", "AAdN", "ANA", "AAdA")) {
     mc <- coerce_model_components(code, 4)[[1]]
     flags <- model_flags(mc)
@@ -116,7 +130,7 @@ test_that("centring the series leaves the evidence unchanged and restores the le
   y <- ts(1000 + cumsum(rnorm(40)), frequency = 1)
   mc <- coerce_model_components("AAN", 1)
   ctrl <- resolve_bets_control(list())
-  ctrl$psi0 <- mean(diff(y)^2)
+  ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
   le_raw <- fit_one_model(y, mc[[1]], ctrl, "quadrature")$log_evidence
   set.seed(1)
   fit <- fit_bets_models(y, mc, ctrl, integration = "quadrature")$results[[1]]

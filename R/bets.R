@@ -92,10 +92,13 @@
 #' Priors:
 #' - `nu0`, `psi0`: parameters of the prior of the error variance \eqn{\sigma^2},
 #'   a scaled inverse chi-squared with `nu0` degrees of freedom (default 3, must be >2)
-#'   and mean `psi0 / (nu0 - 2)`. By default, `psi0` is the
-#'   residual variance of the naive or seasonal naive forecasts.
+#'   and mean `psi0 / (nu0 - 2)`. By default, `psi0` is set so that the prior
+#'   median of \eqn{\sigma^2} is \eqn{s^2}, the residual variance of the naive or
+#'   (if smaller) seasonal naive forecasts.
 #' - `c_inflate_eta`: inflation factor of the prior covariance of the initial
-#'   states, which is set by a heuristic (default 3).
+#'   states (default 3). Given \eqn{\sigma^2}, the initial states have a normal
+#'   prior with covariance \eqn{c\,\Sigma\,\sigma^2 / s^2}, where \eqn{c} is
+#'   `c_inflate_eta` and \eqn{\Sigma} is set by a heuristic.
 #' - `phi_min`, `phi_max`: range of the damping parameter (default 0.8 and 0.98).
 #'   All smoothing parameters have uniform priors.
 #' - `prior_models`: prior model probabilities for BMA, one per model.
@@ -104,6 +107,7 @@
 #' @return An object of class `"bets"`: a list with the series `y`, the fit of
 #'   each model and their weights (`fit`), the models (`model_components`), the
 #'   `control` settings as given (with defaults), the value of `psi0` used, the
+#'   estimate `s2` of the error variance that sets the scales of the priors, the
 #'   seasonal `period` used for fitting, and the `call`.
 #'
 #' @examples
@@ -170,11 +174,10 @@ bets <- function(y,
   if (m > 24 || length(y) <= m) m <- 1L
   y_fit <- stats::ts(as.numeric(y), frequency = m)
 
-  # Scale of the prior of sigma^2: data-based unless set in control (which keeps
-  # the settings as given)
-  psi0 <- if (is.null(ctrl$psi0)) default_psi0(y_fit) else ctrl$psi0
-  fit_ctrl <- ctrl
-  fit_ctrl$psi0 <- psi0
+  # Data-based scales of the priors (psi0 unless set in control, which keeps the
+  # settings as given)
+  scales <- prior_scales(y_fit, ctrl)
+  fit_ctrl <- utils::modifyList(ctrl, scales)
 
   if (isTRUE(all(y_fit == y_fit[1]))) {         # constant series
     warning("y is constant! Only ETS(A,N,N) is used: the forecasts are flat and ",
@@ -200,7 +203,8 @@ bets <- function(y,
       fit = fit,
       model_components = model_components,
       control = ctrl,
-      psi0 = psi0,
+      psi0 = scales$psi0,
+      s2 = scales$s2,
       period = m,
       call = match.call()
     ),

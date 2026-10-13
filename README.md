@@ -113,11 +113,11 @@ print(bets_fit)
 #>   Model weights and posterior means of the parameters:
 #> 
 #>   model  weight  alpha   beta    phi  gamma  sigma
-#>   AAA     0.681  0.604  0.057      -  0.093  168.3
-#>   AAdA    0.319  0.493  0.185  0.904  0.094  169.9
+#>   AAA     0.670  0.602  0.058      -  0.098  170.5
+#>   AAdA    0.329  0.486  0.187  0.903  0.100  172.3
 #>   (weight < 0.001: ANN, AAN, AAdN, ANA)
 #> 
-#>   Posterior probability of trend: 1.00, damped trend: 0.32, seasonality: 1.00
+#>   Posterior probability of trend: 1.00, damped trend: 0.33, seasonality: 1.00
 ```
 
 **Models.** `ets()` selects a single model by AICc, while `bets()`
@@ -130,12 +130,12 @@ ets_fit$method
 summ_bets <- summary(bets_fit)  # summary of the fitted models
 summ_bets$models
 #>   model weight log_evidence
-#> 1   ANN 0.0000     -718.791
-#> 2   AAN 0.0003     -716.425
-#> 3  AAdN 0.0001     -717.350
-#> 4   ANA 0.0000     -720.138
-#> 5   AAA 0.6808     -708.719
-#> 6  AAdA 0.3187     -709.478
+#> 1   ANN 0.0001     -718.163
+#> 2   AAN 0.0005     -715.878
+#> 3  AAdN 0.0002     -716.761
+#> 4   ANA 0.0000     -719.850
+#> 5   AAA 0.6701     -708.684
+#> 6  AAdA 0.3291     -709.395
 ```
 
 **Parameters.** For the model selected by `ets()`, ETS(A,A,A), we
@@ -153,10 +153,10 @@ round(c(ets_fit$par[c("alpha", "beta", "gamma")], sigma = sqrt(ets_fit$sigma2)),
 post <- summ_bets$parameters$AAA
 post
 #>           mean      sd     2.5%    97.5%
-#> alpha   0.6039  0.0810   0.4513   0.7688
-#> beta    0.0575  0.0443   0.0026   0.1733
-#> gamma   0.0934  0.0709   0.0031   0.2609
-#> sigma 168.2662 12.4047 146.0917 194.6515
+#> alpha   0.6025  0.0817   0.4487   0.7694
+#> beta    0.0580  0.0447   0.0026   0.1763
+#> gamma   0.0976  0.0725   0.0035   0.2661
+#> sigma 170.5251 12.5618 148.0591 197.2346
 ```
 
 We can also visualise the posterior distributions of the parameters
@@ -185,24 +185,24 @@ ets_fc  <- forecast(ets_fit, h = h, level = c(80, 95))
 
 bets_fc
 #>          Point Forecast    Lo 80    Hi 80     Lo 95    Hi 95
-#> Sep 1992       10347.47 10125.65 10576.63 10007.830 10705.88
-#> Oct 1992       10431.83 10172.19 10717.20 10015.551 10849.69
-#> Nov 1992       10599.91 10284.93 10922.95 10129.545 11098.21
-#> Dec 1992       11077.88 10697.48 11480.60 10476.080 11727.03
-#> Jan 1993       10873.69 10439.65 11332.33 10237.287 11566.80
-#> Feb 1993       10958.58 10451.87 11451.79 10237.714 11735.42
-#> Mar 1993       11054.87 10486.35 11586.41 10223.060 11959.74
-#> Apr 1993       11176.24 10552.75 11751.97 10227.655 12177.85
-#> May 1993       11032.88 10338.39 11681.63  9970.735 12161.40
-#> Jun 1993       10990.79 10218.76 11728.57  9844.500 12210.85
-#> Jul 1993       11078.31 10281.06 11858.70  9792.992 12413.55
-#> Aug 1993       11180.40 10317.35 12053.98  9759.746 12616.37
-#> Sep 1993       11191.44 10249.02 12128.27  9638.486 12757.27
-#> Oct 1993       11271.70 10280.11 12267.34  9627.237 12954.41
-#> Nov 1993       11427.05 10365.23 12474.10  9619.016 13249.91
-#> Dec 1993       11889.92 10745.28 13010.91 10041.920 13824.35
-#> Jan 1994       11672.68 10419.00 12865.27  9715.118 13680.66
-#> Feb 1994       11743.85 10446.83 12987.54  9582.372 13887.27
+#> Sep 1992       10348.41 10120.53 10584.05 10005.313 10730.18
+#> Oct 1992       10445.74 10152.59 10724.37 10021.855 10889.51
+#> Nov 1992       10622.29 10272.20 10976.90 10118.067 11150.25
+#> Dec 1992       11099.93 10712.85 11527.76 10477.252 11754.82
+#> Jan 1993       10892.65 10445.83 11373.78 10107.624 11623.88
+#> Feb 1993       10986.59 10491.50 11524.47 10109.697 11779.04
+#> Mar 1993       11078.16 10484.53 11655.58 10120.838 11988.42
+#> Apr 1993       11199.94 10558.13 11849.94 10193.573 12222.10
+#> May 1993       11055.64 10358.38 11784.70  9828.543 12136.87
+#> Jun 1993       11015.49 10267.13 11760.91  9752.892 12163.85
+#> Jul 1993       11102.00 10254.18 11960.52  9691.037 12481.32
+#> Aug 1993       11211.86 10295.76 12076.58  9718.016 12663.26
+#> Sep 1993       11217.74 10201.11 12197.59  9553.297 12851.02
+#> Oct 1993       11301.99 10240.13 12402.02  9559.822 13048.75
+#> Nov 1993       11466.51 10256.57 12597.57  9593.633 13322.55
+#> Dec 1993       11927.56 10682.51 13130.53  9895.618 13973.63
+#> Jan 1994       11724.55 10392.43 13035.97  9675.835 13872.25
+#> Feb 1994       11794.58 10328.25 13151.88  9548.734 14060.26
 ```
 
 Finally, we plot the last years of the series with the forecasts of both
@@ -231,11 +231,11 @@ the M3 test sets (horizons 6, 8 and 18):
 <th>Coverage 95%</th><th>MSIS</th><th>Time (s)</th></tr></thead>
 <tbody>
 <tr><td rowspan="2">Yearly (645)</td><td>ets</td><td align="right">2.893</td><td align="right">0.645</td><td align="right">0.780</td><td align="right">41.87</td><td align="right">0.004</td></tr>
-<tr><td>bets</td><td align="right">2.872</td><td align="right">0.698</td><td align="right">0.857</td><td align="right">32.41</td><td align="right">0.022</td></tr>
-<tr><td rowspan="2">Quarterly (756)</td><td>ets</td><td align="right">1.177</td><td align="right">0.690</td><td align="right">0.839</td><td align="right">11.90</td><td align="right">0.032</td></tr>
-<tr><td>bets</td><td align="right">1.167</td><td align="right">0.736</td><td align="right">0.892</td><td align="right">10.30</td><td align="right">0.064</td></tr>
-<tr><td rowspan="2">Monthly (1428)</td><td>ets</td><td align="right">0.880</td><td align="right">0.761</td><td align="right">0.904</td><td align="right">7.06</td><td align="right">0.135</td></tr>
-<tr><td>bets</td><td align="right">0.867</td><td align="right">0.816</td><td align="right">0.943</td><td align="right">6.55</td><td align="right">0.122</td></tr>
+<tr><td>bets</td><td align="right">2.868</td><td align="right">0.717</td><td align="right">0.869</td><td align="right">31.53</td><td align="right">0.024</td></tr>
+<tr><td rowspan="2">Quarterly (756)</td><td>ets</td><td align="right">1.177</td><td align="right">0.690</td><td align="right">0.839</td><td align="right">11.90</td><td align="right">0.034</td></tr>
+<tr><td>bets</td><td align="right">1.167</td><td align="right">0.745</td><td align="right">0.899</td><td align="right">10.05</td><td align="right">0.067</td></tr>
+<tr><td rowspan="2">Monthly (1428)</td><td>ets</td><td align="right">0.880</td><td align="right">0.761</td><td align="right">0.904</td><td align="right">7.06</td><td align="right">0.134</td></tr>
+<tr><td>bets</td><td align="right">0.868</td><td align="right">0.820</td><td align="right">0.946</td><td align="right">6.57</td><td align="right">0.119</td></tr>
 </tbody>
 </table>
 
