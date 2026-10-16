@@ -66,6 +66,31 @@ test_that("predict.bets() returns expected list elements", {
                ignore.order = TRUE)
 })
 
+test_that("predict.bets(return_paths = TRUE) returns the trajectories behind the forecasts", {
+  set.seed(1)
+  fc <- predict(fit_seas, h = 6, level = c(50, 90), n_traj = 400, return_paths = TRUE)
+  expect_true(stats::is.ts(fc$paths))
+  expect_equal(dim(fc$paths), c(6L, 400L))
+  expect_equal(stats::tsp(fc$paths), stats::tsp(fc$mean))
+  expect_equal(as.numeric(rowMeans(fc$paths)), as.numeric(fc$mean))
+  q <- apply(fc$paths, 1, stats::quantile, probs = c(0.05, 0.95))
+  expect_equal(unname(q[1, ]), as.numeric(fc$lower[, "90"]))
+  expect_equal(unname(q[2, ]), as.numeric(fc$upper[, "90"]))
+  # Default, h = 1, invalid flag
+  expect_null(predict(fit_seas, h = 2)$paths)
+  expect_equal(dim(predict(fit_ann, h = 1, n_traj = 10, return_paths = TRUE)$paths), c(1L, 10L))
+  expect_error(predict(fit_ann, return_paths = NA), "return_paths must be TRUE or FALSE")
+})
+
+test_that("predict.bets() paths are the simulated trajectories, shuffled", {
+  set.seed(2)
+  p <- predict(fit_seas, h = 1, n_traj = 500, return_paths = TRUE)$paths
+  set.seed(2)
+  traj <- simulate_future_trajectories(fit_seas$fit, h = 1L, n_traj = 500L)
+  expect_setequal(as.numeric(p), as.numeric(traj))
+  expect_false(identical(as.numeric(p), as.numeric(traj)))
+})
+
 # ---------------------------------------------------------------------------
 # mean forecast dimensions and timing
 # ---------------------------------------------------------------------------

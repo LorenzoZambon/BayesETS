@@ -10,13 +10,18 @@
 #' @param level Levels of the prediction intervals.
 #' @param n_traj Number of simulated trajectories (default 1000).
 #'   Increase it to reduce the Monte Carlo error of the interval bounds.
+#' @param return_paths Logical: also return the simulated trajectories
+#'   (default `FALSE`).
 #' @param ... Unused.
 #'
 #' @return An object of class `bets_forecast`, with `print()` and `plot()`
 #'   methods ([plot.bets_forecast()]): a list with the point forecasts `mean`
 #'   and the interval bounds `lower` and `upper` (one column per level), as time
 #'   series after the end of the series, the `level`s, the series `x`, the
-#'   fitted `model` and the `method` ("BETS").
+#'   fitted `model` and the `method` ("BETS"). With `return_paths = TRUE`, also
+#'   `paths`: the trajectories as a time series with `h` rows and `n_traj`
+#'   columns, in random order (draws from the predictive distribution of the
+#'   model combination).
 #'
 #' @examples
 #' set.seed(1)
@@ -29,9 +34,13 @@
 #'
 #' plot(predict(fit, h = 24))
 #'
+#' # Trajectories, e.g. for the forecast distribution of the total over 12 months
+#' fc <- predict(fit, h = 12, return_paths = TRUE)
+#' quantile(colSums(fc$paths), c(0.05, 0.5, 0.95))
+#'
 #' @export
 predict.bets <- function(object, newdata = NULL, h = NULL, level = c(80, 95),
-                         n_traj = 1000, ...) {
+                         n_traj = 1000, return_paths = FALSE, ...) {
   if (!is.null(newdata))
     stop("`newdata` is not supported for BETS models: forecasts are always ",
          "generated forward from the end of the training series.")
@@ -46,6 +55,9 @@ predict.bets <- function(object, newdata = NULL, h = NULL, level = c(80, 95),
 
   if (!is_count(n_traj))
     stop("n_traj must be a single positive integer")
+
+  if (!(is.logical(return_paths) && length(return_paths) == 1 && !is.na(return_paths)))
+    stop("return_paths must be TRUE or FALSE")
 
   level <- sort(unique(as.numeric(level)))
   if (any(level <= 0 | level >= 100))
@@ -85,6 +97,12 @@ predict.bets <- function(object, newdata = NULL, h = NULL, level = c(80, 95),
     x      = x,
     series = deparse(substitute(object))
   )
+  # Trajectories are grouped by model: shuffled, so that any subset is a sample
+  # from the combination
+  if (return_paths) {
+    out$paths <- stats::ts(t(traj[sample.int(nrow(traj)), , drop = FALSE]),
+                           start = start_fc, frequency = stats::frequency(x))
+  }
   class(out) <- "bets_forecast"
   out
 }

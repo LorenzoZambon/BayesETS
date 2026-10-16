@@ -10,6 +10,7 @@
   h = NULL,
   level = c(80, 95),
   n_traj = 1000,
+  return_paths = FALSE,
   ...
 )
 }
@@ -26,6 +27,9 @@ for seasonal series (if up to 24), and 10 otherwise.}
 \item{n_traj}{Number of simulated trajectories (default 1000).
 Increase it to reduce the Monte Carlo error of the interval bounds.}
 
+\item{return_paths}{Logical: also return the simulated trajectories
+(default \code{FALSE}).}
+
 \item{...}{Unused.}
 }
 \value{
@@ -33,7 +37,10 @@ An object of class \code{bets_forecast}, with \code{print()} and \code{plot()}
 methods (\code{\link[=plot.bets_forecast]{plot.bets_forecast()}}): a list with the point forecasts \code{mean}
 and the interval bounds \code{lower} and \code{upper} (one column per level), as time
 series after the end of the series, the \code{level}s, the series \code{x}, the
-fitted \code{model} and the \code{method} ("BETS").
+fitted \code{model} and the \code{method} ("BETS"). With \code{return_paths = TRUE}, also
+\code{paths}: the trajectories as a time series with \code{h} rows and \code{n_traj}
+columns, in random order (draws from the predictive distribution of the
+model combination).
 }
 \description{
 Forecast distribution of a fitted \code{bets} object, from simulated
@@ -49,5 +56,9 @@ fc
 predict(fit, h = 6, level = c(50, 90))
 
 plot(predict(fit, h = 24))
+
+# Trajectories, e.g. for the forecast distribution of the total over 12 months
+fc <- predict(fit, h = 12, return_paths = TRUE)
+quantile(colSums(fc$paths), c(0.05, 0.5, 0.95))
 
 }
