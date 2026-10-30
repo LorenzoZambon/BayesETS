@@ -115,8 +115,12 @@ List build_design_and_c_batch(NumericVector yR,
       // y~_t = y_t - c_t(\theta)
       double yt = y(t) - fd;
 
-      // Rank-1 updates
-      XtXi += fc * fc.t();
+      // Rank-1 updates (only the upper triangle of X'X, which is symmetric)
+      const double* f = fc.memptr();
+      for (int c = 0; c < n_eta; c++) {
+        double* col = XtXi.colptr(c);
+        for (int r = 0; r <= c; r++) col[r] += f[r] * f[c];
+      }
       Xtyi += fc * yt;
       ytyi += yt * yt;
 
@@ -145,7 +149,7 @@ List build_design_and_c_batch(NumericVector yR,
       }
     }
 
-    XtX.slice(i) = XtXi;
+    XtX.slice(i) = symmatu(XtXi);
     Xty.col(i) = Xtyi;
     yty(i) = ytyi;
 
