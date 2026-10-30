@@ -9,8 +9,9 @@
   newdata = NULL,
   h = NULL,
   level = c(80, 95),
-  n_traj = 1000,
   return_paths = FALSE,
+  n_traj = 1000,
+  return_mixture = FALSE,
   ...
 )
 }
@@ -24,11 +25,17 @@ for seasonal series (if up to 24), and 10 otherwise.}
 
 \item{level}{Levels of the prediction intervals.}
 
-\item{n_traj}{Number of simulated trajectories (default 1000).
-Increase it to reduce the Monte Carlo error of the interval bounds.}
+\item{return_paths}{Logical: also return sample paths from the forecast
+distribution (default \code{FALSE}).}
 
-\item{return_paths}{Logical: also return the simulated trajectories
-(default \code{FALSE}).}
+\item{n_traj}{Number of sample paths (default 1000), used only if
+\code{return_paths = TRUE}.}
+
+\item{return_mixture}{Logical: also return the forecast distribution
+as a mixture of Student-t distributions, horizon by horizon
+(default \code{FALSE}). The mixture describes each horizon separately:
+for quantities involving several horizons (e.g. the total over the
+next 12 months), use the sample paths (\code{return_paths = TRUE}).}
 
 \item{...}{Unused.}
 }
@@ -38,13 +45,25 @@ methods (\code{\link[=plot.bets_forecast]{plot.bets_forecast()}}): a list with t
 and the interval bounds \code{lower} and \code{upper} (one column per level), as time
 series after the end of the series, the \code{level}s, the series \code{x}, the
 fitted \code{model} and the \code{method} ("BETS"). With \code{return_paths = TRUE}, also
-\code{paths}: the trajectories as a time series with \code{h} rows and \code{n_traj}
-columns, in random order (draws from the predictive distribution of the
-model combination).
+\code{paths}: the sample paths as a time series with \code{h} rows and \code{n_traj}
+columns (independent draws from the forecast distribution). With
+\code{return_mixture = TRUE}, also \code{mixture}: a list with the \code{weights} of the
+components (summing to 1), their degrees of freedom \code{df}, and their
+\code{location} and \code{scale} (one row per component, one column per horizon).
+The forecast CDF at horizon \code{j} is
+\code{sum(weights * pt((x - location[, j]) / scale[, j], df))}.
 }
 \description{
-Forecast distribution of a fitted \code{bets} object, from simulated
-trajectories.
+Forecast distribution of a fitted \code{bets} object, computed in closed form.
+Given the smoothing parameters of a model, the forecast at each horizon has a
+Student-t distribution, since the initial states and the error variance are
+integrated analytically. Over the posterior particles of the smoothing
+parameters (quadrature nodes or AIS draws) and over the models, the forecast
+distribution is thus a mixture of Student-t distributions, whose quantiles
+give the prediction intervals. Given the fit, the forecasts are deterministic.
+Components with negligible weight are left out: the models with weight below
+0.0001, and the smallest components holding 0.01\% of the weight.
+Sample paths are simulated only on request.
 }
 \examples{
 set.seed(1)
@@ -57,8 +76,13 @@ predict(fit, h = 6, level = c(50, 90))
 
 plot(predict(fit, h = 24))
 
-# Trajectories, e.g. for the forecast distribution of the total over 12 months
+# Sample paths, e.g. for the forecast distribution of the total over 12 months
 fc <- predict(fit, h = 12, return_paths = TRUE)
 quantile(colSums(fc$paths), c(0.05, 0.5, 0.95))
+
+# Probability that the next observation exceeds 8000, from the mixture
+mix <- predict(fit, h = 1, return_mixture = TRUE)$mixture
+sum(mix$weights * pt((8000 - mix$location[, 1]) / mix$scale[, 1], mix$df,
+                     lower.tail = FALSE))
 
 }

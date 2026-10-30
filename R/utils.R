@@ -11,6 +11,14 @@ draws_per_model <- function(model_weights, n) {
   n_k
 }
 
+# Indices (in their order) of the smallest set of largest weights holding at
+# least 1 - mass of the total: the weights left out hold at most mass
+heavy_set <- function(w, mass) {
+  o <- order(w, decreasing = TRUE)
+  n <- min(sum(cumsum(w[o]) < (1 - mass) * sum(w)) + 1L, length(w))
+  sort(o[seq_len(n)])
+}
+
 # Prints a character matrix with its column names as header, indented by two
 # spaces: first column left-aligned, the others right-aligned
 cat_table <- function(tab) {

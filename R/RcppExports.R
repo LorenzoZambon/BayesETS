@@ -5,12 +5,24 @@ ets_residuals <- function(yR, trend, seas, damped, m, init_statesR, paramsR, ret
     .Call(`_BayesETS_ets_residuals`, yR, trend, seas, damped, m, init_statesR, paramsR, return_residuals)
 }
 
+ets_t_components <- function(final_mean, final_R, idx, alpha, beta, phi, gamma, s2, trend, seas, h) {
+    .Call(`_BayesETS_ets_t_components`, final_mean, final_R, idx, alpha, beta, phi, gamma, s2, trend, seas, h)
+}
+
+t_mixture_quantiles <- function(w, location, scale, df, probs, tol = 1e-8) {
+    .Call(`_BayesETS_t_mixture_quantiles`, w, location, scale, df, probs, tol)
+}
+
 build_design_and_c_batch <- function(yR, trend, seas, damped, m, paramsR, return_final = FALSE) {
     .Call(`_BayesETS_build_design_and_c_batch`, yR, trend, seas, damped, m, paramsR, return_final)
 }
 
 final_states_rb <- function(final_coef, final_const, eta, idx) {
     .Call(`_BayesETS_final_states_rb`, final_coef, final_const, eta, idx)
+}
+
+final_states_posterior_rb <- function(final_coef, final_const, mu_n, Rn, idx) {
+    .Call(`_BayesETS_final_states_posterior_rb`, final_coef, final_const, mu_n, Rn, idx)
 }
 
 marginal_likelihood_rb <- function(XtX_cube, Xty_mat, yty_vec, eta0, V0, nu0, psi0, L, return_posterior = FALSE) {

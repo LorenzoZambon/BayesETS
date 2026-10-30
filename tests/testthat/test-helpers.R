@@ -87,31 +87,39 @@ test_that("compute_stacking_weights() handles K=3 models", {
 })
 
 # ---------------------------------------------------------------------------
-# simulate_future_trajectories()
+# simulate_paths()
 # ---------------------------------------------------------------------------
 
-# Shared fit object used across trajectory tests
+# Shared fit object used across path tests
 local({
   set.seed(42)
   fit_ann <<- bets(ts(rnorm(30)), model = "ANN")
 })
 
-test_that("simulate_future_trajectories() returns a matrix", {
-  traj <- simulate_future_trajectories(fit_ann$fit, h = 5, n_traj = 50)
-  expect_true(is.matrix(traj))
+test_that("simulate_paths() returns a finite n_traj x h matrix", {
+  for (h in c(1L, 8L)) {
+    paths <- simulate_paths(fit_ann$fit, forecast_mixture(fit_ann$fit, h), h, 50L)
+    expect_true(is.matrix(paths))
+    expect_equal(dim(paths), c(50L, h))
+    expect_true(all(is.finite(paths)))
+  }
+  expect_equal(dim(simulate_paths(fit_ann$fit, forecast_mixture(fit_ann$fit, 3L), 3L, 1L)), c(1L, 3L))
 })
 
-test_that("simulate_future_trajectories() returns n_traj rows", {
-  traj <- simulate_future_trajectories(fit_ann$fit, h = 5, n_traj = 50)
-  expect_equal(nrow(traj), 50)
-})
+# ---------------------------------------------------------------------------
+# heavy_set()
+# ---------------------------------------------------------------------------
 
-test_that("simulate_future_trajectories() returns h columns", {
-  traj <- simulate_future_trajectories(fit_ann$fit, h = 8, n_traj = 40)
-  expect_equal(ncol(traj), 8)
-})
-
-test_that("simulate_future_trajectories() returns finite values", {
-  traj <- simulate_future_trajectories(fit_ann$fit, h = 5, n_traj = 50)
-  expect_true(all(is.finite(traj)))
+test_that("heavy_set() keeps the smallest set of largest weights with the mass", {
+  w <- c(0.5, 1e-6, 0.3, 2e-6, 0.2 - 3e-6)
+  expect_identical(heavy_set(w, 1e-5), c(1L, 3L, 5L))
+  expect_identical(heavy_set(w, 0), 1:5)
+  expect_identical(heavy_set(w, 0.25), c(1L, 3L))
+  expect_identical(heavy_set(c(0, 1, 0), 1e-4), 2L)
+  set.seed(1)
+  w <- stats::rexp(3000)^4
+  k <- heavy_set(w, 1e-4)
+  expect_gte(sum(w[k]), (1 - 1e-4) * sum(w))
+  expect_lt(sum(w[k]) - min(w[k]), (1 - 1e-4) * sum(w))   # minimal
+  expect_false(is.unsorted(k))
 })

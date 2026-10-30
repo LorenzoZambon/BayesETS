@@ -1,6 +1,12 @@
 ################################################################################
 # MODEL FITTING
 
+# Negligible weights: the particles holding together at most .NEGLIGIBLE_PARTICLES
+# of the weight of their model are dropped, and the models with weight below
+# .NEGLIGIBLE_MODELS do not enter the forecasts
+.NEGLIGIBLE_PARTICLES <- 1e-5
+.NEGLIGIBLE_MODELS <- 1e-4
+
 # Fits each model and combines them (BMA or stacking)
 fit_bets_models <- function(y,
                             model_components,
@@ -38,6 +44,7 @@ fit_bets_models <- function(y,
     if (!is.null(res_i$etas)) {
       res_i$etas[, "l"]   <- res_i$etas[, "l"] + y_shift
       res_i$states[, "l"] <- res_i$states[, "l"] + y_shift
+      res_i$particles$final_mean["l", ] <- res_i$particles$final_mean["l", ] + y_shift
     }
 
     fit_time_per_model[i] <- proc.time()[3] - t0
@@ -70,6 +77,13 @@ fit_bets_models <- function(y,
     labels <- vapply(model_components, ets_label, character(1))
     for (i in seq_along(labels)) {
       cat(sprintf("  %-5s: %.3f\n", labels[i], model_weights[i]))
+    }
+  }
+
+  # Models with negligible weight: final states dropped (no forecasts)
+  for (i in which(model_weights < .NEGLIGIBLE_MODELS)) {
+    if (!is.null(results_list[[i]]$particles)) {
+      results_list[[i]]$particles[c("final_mean", "final_R")] <- NULL
     }
   }
 
@@ -120,13 +134,19 @@ fit_one_model <- function(y, model_components, ctrl, integration,
     timing$post <- proc.time()[3] - t0
   }
 
-  # Weighted particles of the posterior (quadrature nodes or AIS draws), for the
-  # summaries: theta, weights, and \sigma^2 | theta ~ sigma2_scale / \chi^2_{sigma2_df}
+  # Weighted particles of the posterior (quadrature nodes or AIS draws), without the
+  # negligible ones: theta, weights, \sigma^2 | theta ~ sigma2_scale / \chi^2_{sigma2_df},
+  # and final states x_T | theta, \sigma^2 ~ N(final_mean, \sigma^2 t(final_R) final_R)
   particles <- if (!failed) {
-    keep <- int$w > 0
-    list(theta = int$theta[keep, , drop = FALSE], w = int$w[keep],
+    keep <- heavy_set(int$w, .NEGLIGIBLE_PARTICLES)
+    fs <- final_states_posterior_rb(int$ml_res$final_coef, int$ml_res$final_const,
+                                    int$ml_res$mu_n, int$ml_res$Rn, keep)
+    state_names <- state_names_of(model_components, stats::frequency(y))
+    list(theta = int$theta[keep, , drop = FALSE], w = int$w[keep] / sum(int$w[keep]),
          sigma2_scale = as.numeric(int$ml_res$posterior_scale)[keep],
-         sigma2_df = ctrl$nu0 + length(y))
+         sigma2_df = ctrl$nu0 + length(y),
+         final_mean = matrix(fs$mean, ncol = length(keep), dimnames = list(state_names, NULL)),
+         final_R = array(fs$R, dim = dim(fs$R), dimnames = list(NULL, state_names, NULL)))
   }
 
   list(
@@ -177,7 +197,7 @@ draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
 
   # Initial states from the C++ order (l, [b,] s_m, ..., s1) to the R order
   # (l, [b,] s1, ..., s_m); in the final states s1 is the next one used
-  state_names <- c("l", if (flags$trend) "b", if (flags$seas) paste0("s", seq_len(m)))
+  state_names <- state_names_of(model_components, m)
   etas <- t(eta_cpp)
   colnames(etas) <- c("l", if (flags$trend) "b", if (flags$seas) paste0("s", rev(seq_len(m))))
   etas <- etas[, state_names, drop = FALSE]
@@ -222,7 +242,9 @@ fit_constant_series <- function(y, ctrl, combination) {
     # alpha keeps its uniform prior: equally weighted, equally spaced quantiles
     particles = list(theta = matrix(stats::ppoints(n), ncol = 1, dimnames = list(NULL, "alpha")),
                      w = rep(1 / n, n), sigma2_scale = rep(psi0, n),
-                     sigma2_df = ctrl$nu0 + length(y)),
+                     sigma2_df = ctrl$nu0 + length(y),
+                     final_mean = matrix(level, nrow = 1, ncol = n, dimnames = list("l", NULL)),
+                     final_R = array(0, dim = c(1, 1, n), dimnames = list(NULL, "l", NULL))),
     log_evidence = NA_real_,
     model_components = c("A", "N", "N", "FALSE"),
     integration = "constant series"

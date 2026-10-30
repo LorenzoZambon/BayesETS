@@ -11,7 +11,8 @@ local({
 
 test_that("each model stores its weighted particles", {
   n <- length(fit_seas$y)
-  for (r in fit_seas$fit$results) {
+  for (i in seq_along(fit_seas$fit$results)) {
+    r <- fit_seas$fit$results[[i]]
     p <- r$particles
     expect_identical(colnames(p$theta), colnames(r$thetas))
     expect_length(p$w, nrow(p$theta))
@@ -19,6 +20,15 @@ test_that("each model stores its weighted particles", {
     expect_true(all(p$w > 0))
     expect_equal(sum(p$w), 1, tolerance = 1e-12)
     expect_equal(p$sigma2_df, fit_seas$control$nu0 + n)
+    # Posterior of the final states, for the models that enter the forecasts
+    if (fit_seas$fit$model_weights[i] >= 1e-4) {
+      states <- state_names_of(r$model_components, fit_seas$period)
+      expect_identical(dimnames(p$final_mean), list(states, NULL))
+      expect_identical(dim(p$final_R), c(length(states), length(states), length(p$w)))
+      expect_identical(dimnames(p$final_R)[[2]], states)
+    } else {
+      expect_null(p$final_mean)
+    }
   }
 })
 

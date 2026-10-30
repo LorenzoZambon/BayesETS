@@ -200,6 +200,29 @@ arma::mat final_states_rb(const arma::cube& final_coef,
 
 
 // ---------------------------------------------------------------------------
+// Posterior of the final states at the particles idx (1-based), given \sigma^2:
+// x_T ~ N(mean, \sigma^2 R' R), with mean = final_coef' mu_n + final_const and
+// R = Rn final_coef (R' R can be near-singular: no Cholesky factor of it)
+// ---------------------------------------------------------------------------
+
+// [[Rcpp::export]]
+List final_states_posterior_rb(const arma::cube& final_coef,
+                               const arma::mat& final_const,
+                               const arma::mat& mu_n,
+                               const arma::cube& Rn,
+                               const arma::uvec& idx) {
+  mat mean(final_coef.n_cols, idx.n_elem);
+  cube R(Rn.n_rows, final_coef.n_cols, idx.n_elem);
+  for (uword j = 0; j < idx.n_elem; j++) {
+    uword k = idx(j) - 1;
+    mean.col(j) = final_coef.slice(k).t() * mu_n.col(k) + final_const.col(k);
+    R.slice(j) = Rn.slice(k) * final_coef.slice(k);
+  }
+  return List::create(_["mean"] = mean, _["R"] = R);
+}
+
+
+// ---------------------------------------------------------------------------
 // Log marginal likelihood p(y | \theta), with \eta and \sigma^2 integrated out:
 //   y~ | \theta ~ t_{\nu_0}(X \eta_0, (\psi_0 / \nu_0) (I + X V_0 X'))
 // computed with the Woodbury identity and the determinant lemma (no L x L

@@ -17,8 +17,8 @@ Description: Bayesian exponential smoothing (ETS) state space models for
     analytically, under a conjugate Normal-inverse-chi-squared prior; the
     smoothing parameters are integrated numerically, by adaptive Gauss-Hermite
     quadrature (AGHQ) or adaptive importance sampling (AIS). 
-    The ETS models are combined by Bayesian model averaging (BMA), and forecasts are obtained 
-    by simulating future sample paths. 
+    The ETS models are combined by Bayesian model averaging (BMA); the forecast
+    distribution is computed in closed form, as a mixture of Student-t distributions.
     Currently only additive models are supported.
 License: LGPL (>= 3)
 URL: https://github.com/LorenzoZambon/BayesETS

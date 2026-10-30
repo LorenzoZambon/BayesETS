@@ -1,17 +1,30 @@
 #' Predict from a BETS model
 #'
-#' Forecast distribution of a fitted `bets` object, from simulated
-#' trajectories.
+#' Forecast distribution of a fitted `bets` object, computed in closed form.
+#' Given the smoothing parameters of a model, the forecast at each horizon has a
+#' Student-t distribution, since the initial states and the error variance are
+#' integrated analytically. Over the posterior particles of the smoothing
+#' parameters (quadrature nodes or AIS draws) and over the models, the forecast
+#' distribution is thus a mixture of Student-t distributions, whose quantiles
+#' give the prediction intervals. Given the fit, the forecasts are deterministic.
+#' Components with negligible weight are left out: the models with weight below
+#' 0.0001, and the smallest components holding 0.01% of the weight.
+#' Sample paths are simulated only on request.
 #'
 #' @param object A fitted object from [bets()].
 #' @param newdata Not supported: must be `NULL`.
 #' @param h Forecast horizon. Default is the frequency of the series
 #'   for seasonal series (if up to 24), and 10 otherwise.
 #' @param level Levels of the prediction intervals.
-#' @param n_traj Number of simulated trajectories (default 1000).
-#'   Increase it to reduce the Monte Carlo error of the interval bounds.
-#' @param return_paths Logical: also return the simulated trajectories
-#'   (default `FALSE`).
+#' @param return_paths Logical: also return sample paths from the forecast
+#'   distribution (default `FALSE`).
+#' @param n_traj Number of sample paths (default 1000), used only if
+#'   `return_paths = TRUE`.
+#' @param return_mixture Logical: also return the forecast distribution
+#'   as a mixture of Student-t distributions, horizon by horizon
+#'   (default `FALSE`). The mixture describes each horizon separately:
+#'   for quantities involving several horizons (e.g. the total over the
+#'   next 12 months), use the sample paths (`return_paths = TRUE`).
 #' @param ... Unused.
 #'
 #' @return An object of class `bets_forecast`, with `print()` and `plot()`
@@ -19,9 +32,13 @@
 #'   and the interval bounds `lower` and `upper` (one column per level), as time
 #'   series after the end of the series, the `level`s, the series `x`, the
 #'   fitted `model` and the `method` ("BETS"). With `return_paths = TRUE`, also
-#'   `paths`: the trajectories as a time series with `h` rows and `n_traj`
-#'   columns, in random order (draws from the predictive distribution of the
-#'   model combination).
+#'   `paths`: the sample paths as a time series with `h` rows and `n_traj`
+#'   columns (independent draws from the forecast distribution). With
+#'   `return_mixture = TRUE`, also `mixture`: a list with the `weights` of the
+#'   components (summing to 1), their degrees of freedom `df`, and their
+#'   `location` and `scale` (one row per component, one column per horizon).
+#'   The forecast CDF at horizon `j` is
+#'   `sum(weights * pt((x - location[, j]) / scale[, j], df))`.
 #'
 #' @examples
 #' set.seed(1)
@@ -34,13 +51,18 @@
 #'
 #' plot(predict(fit, h = 24))
 #'
-#' # Trajectories, e.g. for the forecast distribution of the total over 12 months
+#' # Sample paths, e.g. for the forecast distribution of the total over 12 months
 #' fc <- predict(fit, h = 12, return_paths = TRUE)
 #' quantile(colSums(fc$paths), c(0.05, 0.5, 0.95))
 #'
+#' # Probability that the next observation exceeds 8000, from the mixture
+#' mix <- predict(fit, h = 1, return_mixture = TRUE)$mixture
+#' sum(mix$weights * pt((8000 - mix$location[, 1]) / mix$scale[, 1], mix$df,
+#'                      lower.tail = FALSE))
+#'
 #' @export
 predict.bets <- function(object, newdata = NULL, h = NULL, level = c(80, 95),
-                         n_traj = 1000, return_paths = FALSE, ...) {
+                         return_paths = FALSE, n_traj = 1000, return_mixture = FALSE, ...) {
   if (!is.null(newdata))
     stop("`newdata` is not supported for BETS models: forecasts are always ",
          "generated forward from the end of the training series.")
@@ -53,28 +75,28 @@ predict.bets <- function(object, newdata = NULL, h = NULL, level = c(80, 95),
       stop("h must be a single positive integer")
   }
 
+  if (!(is.logical(return_paths) && length(return_paths) == 1 && !is.na(return_paths)))
+    stop("return_paths must be TRUE or FALSE")
+
   if (!is_count(n_traj))
     stop("n_traj must be a single positive integer")
 
-  if (!(is.logical(return_paths) && length(return_paths) == 1 && !is.na(return_paths)))
-    stop("return_paths must be TRUE or FALSE")
+  if (!(is.logical(return_mixture) && length(return_mixture) == 1 && !is.na(return_mixture)))
+    stop("return_mixture must be TRUE or FALSE")
 
   level <- sort(unique(as.numeric(level)))
   if (any(level <= 0 | level >= 100))
     stop("level must be between 0 and 100")
 
-  traj <- simulate_future_trajectories(object$fit, h = as.integer(h),
-                                       n_traj = as.integer(n_traj))
-  mean_fc <- colMeans(traj)
+  h <- as.integer(h)
+  mix <- forecast_mixture(object$fit, h)
+  mean_fc <- colSums(mix$weights * mix$location)
 
-  lower <- sapply(level, function(lv)
-    apply(traj, 2, stats::quantile, probs = (100 - lv) / 200, na.rm = TRUE))
-  upper <- sapply(level, function(lv)
-    apply(traj, 2, stats::quantile, probs = 1 - (100 - lv) / 200, na.rm = TRUE))
-
-  # sapply() drops to a vector when h or the number of levels is 1
-  lower <- matrix(lower, nrow = h)
-  upper <- matrix(upper, nrow = h)
+  # Interval bounds: quantiles of the mixture, all horizons and levels at once (C++)
+  a <- (100 - level) / 200
+  q <- t_mixture_quantiles(mix$weights, mix$location, mix$scale, mix$df, c(a, 1 - a))
+  lower <- q[, seq_along(level), drop = FALSE]
+  upper <- q[, length(level) + seq_along(level), drop = FALSE]
   colnames(lower) <- as.character(level)
   colnames(upper) <- as.character(level)
 
@@ -97,12 +119,11 @@ predict.bets <- function(object, newdata = NULL, h = NULL, level = c(80, 95),
     x      = x,
     series = deparse(substitute(object))
   )
-  # Trajectories are grouped by model: shuffled, so that any subset is a sample
-  # from the combination
   if (return_paths) {
-    out$paths <- stats::ts(t(traj[sample.int(nrow(traj)), , drop = FALSE]),
+    out$paths <- stats::ts(t(simulate_paths(object$fit, mix, h, as.integer(n_traj))),
                            start = start_fc, frequency = stats::frequency(x))
   }
+  if (return_mixture) out$mixture <- mix[c("weights", "df", "location", "scale")]
   class(out) <- "bets_forecast"
   out
 }
@@ -196,31 +217,76 @@ time_labels <- function(x) {
   }
 }
 
-# Future trajectories (n_traj x h) of the model combination, from the fit
-# element of a bets object: each model contributes a number of trajectories
-# proportional to its weight
-simulate_future_trajectories <- function(bets_fit, h = 10, n_traj = 1000) {
-  n_models <- length(bets_fit$results)
-  model_weights <- bets_fit$model_weights
 
-  traj_list <- vector("list", n_models)
-  n_traj_list <- draws_per_model(model_weights, n_traj)
+################################################################################
+# FORECAST DISTRIBUTION
 
-  for (i in seq_along(bets_fit$results)) {
-    if (n_traj_list[i] > 0) {
-      idxs <- sample(nrow(bets_fit$results[[i]]$thetas), size = n_traj_list[i], replace = TRUE)
-      res_i <- bets_fit$results[[i]]
-      traj_list[[i]] <- ets_future_traj(
-        model_components = res_i$model_components,
-        states = res_i$states[idxs, , drop = FALSE],
-        params = res_i$thetas[idxs, , drop = FALSE],
-        sigma2s = res_i$sigma2s[idxs],
-        h = h
-      )
-    }
+# The smallest components holding together at most .TRUNCATION_MASS of the
+# weight are left out of the forecast distribution
+.TRUNCATION_MASS <- 1e-4
+
+# Forecast distribution of the model combination, horizon by horizon: mixture
+# of t distributions with df degrees of freedom, one per model and particle,
+# with weights (model weight x particle weight), location and scale
+# (components x h), and the model and particle of each component
+forecast_mixture <- function(bets_fit, h) {
+  results <- bets_fit$results
+  # Models with final states (none for failed and negligible models). Each one
+  # contributes its own t components. A model without closed form (e.g.
+  # multiplicative ETS) would contribute weighted sample paths instead: the CDF
+  # solved in t_mixture_quantiles() would then add the weighted empirical CDF of
+  # the paths, and bisection steps would find the quantiles in the same bracket.
+  models <- which(vapply(results, function(r) !is.null(r$particles$final_mean), logical(1)))
+  n_k <- vapply(results[models], function(r) length(r$particles$w), integer(1))
+  model <- rep(models, n_k)
+  particle <- sequence(n_k)
+  w <- unlist(lapply(models, function(i) bets_fit$model_weights[i] * results[[i]]$particles$w))
+
+  keep <- heavy_set(w, .TRUNCATION_MASS)
+  model <- model[keep]
+  particle <- particle[keep]
+  parts <- lapply(unique(model), function(i) ets_t_mixture(results[[i]], h, particle[model == i]))
+  list(weights = w[keep] / sum(w[keep]),
+       df = results[[models[1]]]$particles$sigma2_df,
+       location = do.call(rbind, lapply(parts, `[[`, "location")),
+       scale = do.call(rbind, lapply(parts, `[[`, "scale")),
+       model = model, particle = particle)
+}
+
+# t components of the forecast distribution of an additive ETS model, at its
+# particles idx: given theta, y_{T+j} ~ t_df(f_j' m_T, (sigma2_scale / df) (v_j + f_j' P_T f_j)),
+# with m_T = final_mean, P_T = t(final_R) final_R, f_j' x_T = l + \phi_j b + (seasonal
+# state of T + j) the forecast without errors and \sigma^2 v_j the variance of the errors
+# (C++); list(location, scale), components x h
+ets_t_mixture <- function(result, h, idx) {
+  p <- result$particles
+  flags <- model_flags(result$model_components)
+  theta <- p$theta[idx, , drop = FALSE]
+  par <- function(name, value) if (name %in% colnames(theta)) theta[, name] else rep(value, length(idx))
+  ets_t_components(p$final_mean, p$final_R, idx, theta[, "alpha"], par("beta", 0), par("phi", 1),
+                   par("gamma", 0), p$sigma2_scale[idx] / p$sigma2_df, flags$trend, flags$seas, h)
+}
+
+# Sample paths (n_traj x h) from the mixture: for each path a component (model
+# and particle), \sigma^2 and the final states from their posteriors, then the
+# errors and the recursion of the model
+simulate_paths <- function(bets_fit, mix, h, n_traj) {
+  k <- sample.int(length(mix$weights), n_traj, replace = TRUE, prob = mix$weights)
+  paths <- matrix(0, n_traj, h)
+  for (i in unique(mix$model[k])) {
+    rows <- which(mix$model[k] == i)
+    r <- bets_fit$results[[i]]
+    p <- r$particles
+    idx <- mix$particle[k[rows]]
+    sigma2 <- p$sigma2_scale[idx] / stats::rchisq(length(rows), df = p$sigma2_df)
+    # x_T = m_T + \sigma t(R_T) z, z ~ N(0, I)
+    z <- matrix(stats::rnorm(dim(p$final_R)[1] * length(rows)), ncol = length(rows))
+    states <- t(final_states_rb(p$final_R, p$final_mean, sweep(z, 2, sqrt(sigma2), "*"), idx))
+    colnames(states) <- rownames(p$final_mean)
+    paths[rows, ] <- ets_future_traj(r$model_components, states, p$theta[idx, , drop = FALSE],
+                                     sigma2, h)
   }
-
-  do.call(rbind, traj_list)
+  paths
 }
 
 # Simulated future trajectories of an ETS model, one per row of params (with

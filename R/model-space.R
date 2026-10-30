@@ -34,15 +34,21 @@ n_states <- function(model_components, m) {
   1L + flags$trend + (if (flags$seas) m else 0L)
 }
 
+# Names of the states of a model: l, [b,] [s1, ..., s_m]
+state_names_of <- function(model_components, m) {
+  flags <- model_flags(model_components)
+  c("l", if (flags$trend) "b", if (flags$seas) paste0("s", seq_len(m)))
+}
+
 # Label of an ETS model (e.g. "AAdN"), from c(error, trend, season, damped)
 ets_label <- function(model_components) {
   d <- if (model_components[[4]] == "TRUE") "d" else ""
   paste0(model_components[[1]], model_components[[2]], d, model_components[[3]])
 }
 
-# Converts the model specification into a list of (error, trend, season, damped)
-# vectors. model: an ETS code (e.g. "AAdN"; "Z" for any option, e.g. "ZZZ" or
-# "AZN"), or a vector or list of codes. m: seasonal period, n: length of the series.
+# Converts the model specification into a list of (error, trend, season, damped) vectors.
+# model: an ETS code (e.g. "AAdN"; "Z" for any option, e.g. "ZZZ" or "AZN"),
+# or a vector or list of codes. m: seasonal period, n: length of the series.
 # As in forecast::ets(), seasonal models need 1 < m <= 24 and n > m: otherwise
 # the seasonal options of "Z" are dropped, and explicit seasonal models are an error.
 coerce_model_components <- function(model, m, additive.only = TRUE, n = Inf) {

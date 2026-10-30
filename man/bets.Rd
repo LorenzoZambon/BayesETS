@@ -120,7 +120,7 @@ updated (default 0.9).
 \item \code{n_quad}: number of Gauss-Hermite nodes per dimension, indexed by \code{d}.
 Default \code{c(21, 21, 9, 7)}.
 \item \code{N_final}: number of posterior draws kept per model, used by
-\code{\link[=predict.bets]{predict.bets()}}, indexed by \code{d}. Default \code{c(200, 300, 500, 500)}.
+\code{\link[=fitted.bets]{fitted.bets()}}, indexed by \code{d}. Default \code{c(200, 300, 500, 500)}.
 }
 
 Priors:
