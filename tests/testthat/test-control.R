@@ -63,7 +63,7 @@ test_that("resolve_bets_control() rejects nu0 <= 2 (no prior mean of sigma^2)", 
 })
 
 test_that("resolve_bets_control() rejects invalid values", {
-  bad <- list(N_iter_max = 0, N_draw = c(64, 128.5), N_final = -1, n_quad = 1:5,
+  bad <- list(N_iter_max = 0, N_draw = c(64, 128.5), n_quad = 1:5,
               n_scan = -1, min_ess = 0, is_df = 0, is_scale = NA, c_inflate_eta = "3",
               lr = 1.5, nu0 = Inf, psi0 = -1, phi_min = 0, phi_max = 1.1,
               prior_models = c(-1, 2), integration = "mcmc")
@@ -77,7 +77,7 @@ test_that("resolve_bets_control() rejects invalid values", {
 
 test_that("resolve_bets_control() accepts valid non-default values", {
   expect_no_error(resolve_bets_control(list(
-    N_draw = 512, N_final = c(100, 200), min_ess = c(32, 64), n_scan = 0, psi0 = 2,
+    N_draw = 512, n_quad = c(15, 11), min_ess = c(32, 64), n_scan = 0, psi0 = 2,
     phi_max = 1, lr = 1, prior_models = c(1, 0, 2), integration = "ais")))
 })
 

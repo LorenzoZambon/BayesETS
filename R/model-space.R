@@ -40,6 +40,17 @@ state_names_of <- function(model_components, m) {
   c("l", if (flags$trend) "b", if (flags$seas) paste0("s", seq_len(m)))
 }
 
+# Initial states (columns of eta) from the C++ order (l, [b,] s_m, ..., s1) to
+# the R order (l, [b,] s1, ..., s_m): one row per column of eta
+eta_to_r_order <- function(eta, model_components, m) {
+  flags <- model_flags(model_components)
+  k <- 1L + flags$trend
+  rows <- c(seq_len(k), if (flags$seas) k + rev(seq_len(m)))
+  out <- t(eta[rows, , drop = FALSE])
+  colnames(out) <- state_names_of(model_components, m)
+  out
+}
+
 # Label of an ETS model (e.g. "AAdN"), from c(error, trend, season, damped)
 ets_label <- function(model_components) {
   d <- if (model_components[[4]] == "TRUE") "d" else ""

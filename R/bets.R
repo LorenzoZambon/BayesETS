@@ -86,8 +86,6 @@
 #'   updated (default 0.9).
 #' - `n_quad`: number of Gauss-Hermite nodes per dimension, indexed by `d`.
 #'   Default `c(21, 21, 9, 7)`.
-#' - `N_final`: number of posterior draws kept per model, used by
-#'   [fitted.bets()], indexed by `d`. Default `c(200, 300, 500, 500)`.
 #'
 #' Priors:
 #' - `nu0`, `psi0`: parameters of the prior of the error variance \eqn{\sigma^2},

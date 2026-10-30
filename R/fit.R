@@ -7,20 +7,19 @@
 .NEGLIGIBLE_PARTICLES <- 1e-5
 .NEGLIGIBLE_MODELS <- 1e-4
 
-# Fits each model and combines them (BMA or stacking)
+# Fits each model and combines them by BMA (stacking is not available: it needs
+# pointwise predictive densities for compute_stacking_weights())
 fit_bets_models <- function(y,
                             model_components,
                             ctrl,
-                            combination = c("bma", "stacking"),
+                            combination = "bma",
                             integration = c("auto", "quadrature", "ais"),
                             verbose = 0) {
-  combination <- match.arg(combination)
   integration <- match.arg(integration)
 
   ctrl$verbose <- verbose   # read by the integrators
 
   n_models <- length(model_components)
-  need_pointwise <- (combination == "stacking")
 
   # Centre the series at its initial level (only the level states change)
   y_shift <- centring_shift(y)
@@ -28,7 +27,6 @@ fit_bets_models <- function(y,
 
   results_list <- vector("list", n_models)
   log_marginal_liks <- rep(NA_real_, n_models)
-  log_lik_list <- if (need_pointwise) vector("list", n_models) else NULL
   fit_time_per_model <- numeric(n_models)
 
   for (i in seq_along(model_components)) {
@@ -38,12 +36,9 @@ fit_bets_models <- function(y,
     t0 <- proc.time()[3]
 
     integration_i <- resolve_integration(integration, model_components[[i]])
-    res_i <- fit_one_model(y_centred, model_components[[i]], ctrl, integration_i,
-                           return_pointwise = need_pointwise)
-    # Undo the centring (NULL for failed models)
-    if (!is.null(res_i$etas)) {
-      res_i$etas[, "l"]   <- res_i$etas[, "l"] + y_shift
-      res_i$states[, "l"] <- res_i$states[, "l"] + y_shift
+    res_i <- fit_one_model(y_centred, model_components[[i]], ctrl, integration_i)
+    # Undo the centring (no particles for failed models)
+    if (!is.null(res_i$particles)) {
       res_i$particles$final_mean["l", ] <- res_i$particles$final_mean["l", ] + y_shift
     }
 
@@ -52,7 +47,6 @@ fit_bets_models <- function(y,
     results_list[[i]]$model_components <- model_components[[i]]
     results_list[[i]]$integration <- integration_i
     log_marginal_liks[i] <- res_i$log_evidence
-    if (need_pointwise) log_lik_list[[i]] <- res_i$log_lik_pointwise
   }
 
   if (!any(is.finite(log_marginal_liks))) {
@@ -61,16 +55,11 @@ fit_bets_models <- function(y,
   }
 
   t0 <- proc.time()[3]
-  if (need_pointwise) {
-    model_weights <- compute_stacking_weights(log_lik_list)
-    if (verbose >= 1) cat("\nStacking Weights:\n")
-  } else {
-    prior_models <- ctrl$prior_models
-    if (is.null(prior_models)) prior_models <- rep(1 / n_models, n_models)
-    log_post_unnorm <- log(prior_models) + log_marginal_liks
-    w <- exp(log_post_unnorm - max(log_post_unnorm))
-    model_weights <- w / sum(w)
-  }
+  prior_models <- ctrl$prior_models
+  if (is.null(prior_models)) prior_models <- rep(1 / n_models, n_models)
+  log_post_unnorm <- log(prior_models) + log_marginal_liks
+  w <- exp(log_post_unnorm - max(log_post_unnorm))
+  model_weights <- w / sum(w)
 
   if (verbose >= 1) {
     cat("\nModel Weights:\n")
@@ -99,11 +88,9 @@ fit_bets_models <- function(y,
 }
 
 # Fit of one model: prior, integrand, integration over the smoothing parameters
-# (integrate_quadrature() or integrate_ais()), posterior draws
-fit_one_model <- function(y, model_components, ctrl, integration,
-                          return_pointwise = FALSE) {
+# (integrate_quadrature() or integrate_ais()), weighted particles of the posterior
+fit_one_model <- function(y, model_components, ctrl, integration) {
   theta_names <- theta_names_of(model_components)
-  N_final <- resolve_by_d(ctrl$N_final, length(theta_names))
 
   prior <- init_rb_prior(y, model_components, theta_names, ctrl)
   log_g_rb <- make_log_g_rb(y, model_components, theta_names, ctrl, prior)
@@ -119,29 +106,20 @@ fit_one_model <- function(y, model_components, ctrl, integration,
   int <- integrate(log_g_rb, scan$Z[1, ], theta_names, ctrl, log_g_mode = log_g_value)
   timing <- c(list(scan = t_scan), int$timing, list(post = 0))
 
+  # The model gets zero weight
   failed <- !is.null(int$failure)
-  if (failed) {
-    # The model gets zero weight; -1e300 rather than -Inf, to avoid NaN in logsumexp
-    warning(int$failure, call. = FALSE)
-    post <- list(log_lik_pointwise = if (return_pointwise) {
-      matrix(-1e300, nrow = N_final, ncol = length(y))
-    })
-  } else {
-    t0 <- proc.time()[3]
-    post <- draw_rb_posterior(y, model_components, int$theta, int$w, int$ml_res,
-                              N_final = N_final, nu0 = ctrl$nu0,
-                              return_pointwise = return_pointwise)
-    timing$post <- proc.time()[3] - t0
-  }
+  if (failed) warning(int$failure, call. = FALSE)
 
   # Weighted particles of the posterior (quadrature nodes or AIS draws), without the
   # negligible ones: theta, weights, \sigma^2 | theta ~ sigma2_scale / \chi^2_{sigma2_df},
   # and final states x_T | theta, \sigma^2 ~ N(final_mean, \sigma^2 t(final_R) final_R)
   particles <- if (!failed) {
+    t0 <- proc.time()[3]
     keep <- heavy_set(int$w, .NEGLIGIBLE_PARTICLES)
     fs <- final_states_posterior_rb(int$ml_res$final_coef, int$ml_res$final_const,
                                     int$ml_res$mu_n, int$ml_res$Rn, keep)
     state_names <- state_names_of(model_components, stats::frequency(y))
+    timing$post <- proc.time()[3] - t0
     list(theta = int$theta[keep, , drop = FALSE], w = int$w[keep] / sum(int$w[keep]),
          sigma2_scale = as.numeric(int$ml_res$posterior_scale)[keep],
          sigma2_df = ctrl$nu0 + length(y),
@@ -150,75 +128,12 @@ fit_one_model <- function(y, model_components, ctrl, integration,
   }
 
   list(
-    thetas = post$thetas,
-    etas = post$etas,
-    states = post$states,
-    sigma2s = post$sigma2s,
     particles = particles,
     ess = int$ess,
     n_iter = int$n_iter,
     prop_params = int$proposal,
     log_evidence = if (failed) -Inf else int$log_evidence,
-    log_lik_pointwise = post$log_lik_pointwise,
     timing = timing
-  )
-}
-
-# Posterior draws: resampling of the weighted particles, then \sigma^2 and eta
-# from their conditional posteriors, and the final states. ml_res: as returned
-# by make_log_g_rb() at the particles.
-draw_rb_posterior <- function(y, model_components, theta_particles, w, ml_res,
-                              N_final, nu0, return_pointwise = FALSE) {
-  L <- length(y)
-  m <- stats::frequency(y)
-  flags <- model_flags(model_components)
-  n_eta <- n_states(model_components, m)
-  N_particles <- nrow(theta_particles)
-
-  res_idx <- sample(N_particles, size = N_final, replace = TRUE, prob = w)
-  thetas <- theta_particles[res_idx, , drop = FALSE]
-
-  posterior_scale <- as.numeric(ml_res$posterior_scale)
-  nu_n <- nu0 + L
-
-  sigma2s <- posterior_scale[res_idx] / stats::rchisq(N_final, df = nu_n)
-
-  # eta ~ N(mu_n, \sigma^2 V_n), with V_n = t(Rn) Rn; all draws at once
-  # (column j of Z: standard normals of draw j)
-  Z <- matrix(stats::rnorm(n_eta * N_final), nrow = n_eta, ncol = N_final)
-  Rn_draws <- ml_res$Rn[, , res_idx, drop = FALSE]
-  Z_draws  <- array(Z[, rep(seq_len(N_final), each = n_eta)], dim = c(n_eta, n_eta, N_final))
-  eta_cpp <- ml_res$mu_n[, res_idx, drop = FALSE] +
-    sweep(colSums(Rn_draws * Z_draws), 2, sqrt(sigma2s), "*")   # n_eta x N_final
-
-  # Final states: affine functions of eta (C++)
-  states <- t(final_states_rb(ml_res$final_coef, ml_res$final_const, eta_cpp,
-                              as.integer(res_idx)))
-
-  # Initial states from the C++ order (l, [b,] s_m, ..., s1) to the R order
-  # (l, [b,] s1, ..., s_m); in the final states s1 is the next one used
-  state_names <- state_names_of(model_components, m)
-  etas <- t(eta_cpp)
-  colnames(etas) <- c("l", if (flags$trend) "b", if (flags$seas) paste0("s", rev(seq_len(m))))
-  etas <- etas[, state_names, drop = FALSE]
-  colnames(states) <- state_names
-
-  log_lik_pointwise <- NULL
-  if (return_pointwise) {
-    # In-sample residuals, for stacking
-    E <- ets_residuals(yR = as.numeric(y), trend = flags$trend, seas = flags$seas,
-                       damped = flags$damped, m = m, init_statesR = etas,
-                       paramsR = thetas, return_residuals = TRUE)$residuals
-    sd_mat <- matrix(sqrt(sigma2s), nrow = nrow(E), ncol = ncol(E), byrow = FALSE)
-    log_lik_pointwise <- stats::dnorm(E, mean = 0, sd = sd_mat, log = TRUE)
-  }
-
-  list(
-    thetas = thetas,
-    etas = etas,
-    states = states,
-    sigma2s = sigma2s,
-    log_lik_pointwise = log_lik_pointwise
   )
 }
 
@@ -233,13 +148,9 @@ centring_shift <- function(y) {
 fit_constant_series <- function(y, ctrl, combination) {
   level <- as.numeric(y[1])
   psi0 <- ctrl$psi0
-  n <- resolve_by_d(ctrl$N_final, 1)
+  n <- 200L
   result <- list(
-    thetas = matrix(stats::runif(n), ncol = 1, dimnames = list(NULL, "alpha")),
-    etas = matrix(level, nrow = n, ncol = 1, dimnames = list(NULL, "l")),
-    states = matrix(level, nrow = n, ncol = 1, dimnames = list(NULL, "l")),
-    sigma2s = psi0 / stats::rchisq(n, df = ctrl$nu0 + length(y)),
-    # alpha keeps its uniform prior: equally weighted, equally spaced quantiles
+    # alpha keeps its uniform prior: n equally weighted, equally spaced quantiles
     particles = list(theta = matrix(stats::ppoints(n), ncol = 1, dimnames = list(NULL, "alpha")),
                      w = rep(1 / n, n), sigma2_scale = rep(psi0, n),
                      sigma2_df = ctrl$nu0 + length(y),

@@ -83,9 +83,8 @@ test_that("fit_one_model() returns the same fields with quadrature and AIS", {
     expect_true(is.na(res_quad$n_iter))
     expect_null(res_quad$prop_params)
     expect_true(is.finite(res_quad$log_evidence))
-    expect_equal(dim(res_quad$thetas), dim(res_ais$thetas))
-    expect_equal(colnames(res_quad$thetas), colnames(res_ais$thetas))
-    expect_equal(colnames(res_quad$states), colnames(res_ais$states))
+    expect_equal(colnames(res_quad$particles$theta), colnames(res_ais$particles$theta))
+    expect_equal(rownames(res_quad$particles$final_mean), rownames(res_ais$particles$final_mean))
   }
 })
 
@@ -97,15 +96,4 @@ test_that("bets() with control integration = 'quadrature' fits and predicts", {
   fc <- predict(fit, h = 5)
   expect_true(all(is.finite(fc$mean)))
   expect_true(all(fc$lower < fc$upper))
-})
-
-test_that("quadrature works with stacking (pointwise log-likelihoods)", {
-  set.seed(1)
-  y <- ts(rnorm(30))
-  ctrl <- resolve_bets_control(list(N_final = 50L))
-  ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
-  fit <- fit_bets_models(y, coerce_model_components(list("ANN", "AAN"), 1),
-                                ctrl, combination = "stacking", integration = "quadrature")
-  expect_equal(dim(fit$results[[1]]$log_lik_pointwise), c(50L, 30L))
-  expect_equal(sum(fit$model_weights), 1, tolerance = 1e-8)
 })

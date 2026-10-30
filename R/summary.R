@@ -149,32 +149,41 @@ states_summary <- function(object, i, probs = c(0.025, 0.975)) {
 }
 
 # Location and scale (particles x states) of the t posteriors (df = sigma2_df)
-# of the normalised initial states of model i, at its particles. Not stored in
-# the fit, to keep bets() fast: the posterior is evaluated again at the
-# particles, on the series as fitted (period and centring of fit_bets_models())
+# of the normalised initial states of model i, at its particles
 initial_states_particles <- function(object, i) {
   r <- object$fit$results[[i]]
   p <- r$particles
-  y <- stats::ts(as.numeric(object$y), frequency = object$period)
   if (r$integration == "constant series") {
     const <- function(v) matrix(v, nrow = length(p$w), ncol = 1, dimnames = list(NULL, "l"))
-    return(list(loc = const(y[1]), scale = const(0)))
+    return(list(loc = const(object$y[1]), scale = const(0)))
   }
 
+  pp <- particle_posteriors(object, i)
+  ml <- pp$ml_res
+  st <- initial_states_t(ml$mu_n, ml$Rn, as.numeric(ml$posterior_scale) / p$sigma2_df,
+                         initial_states_map(r$model_components, object$period))
+  st$loc[, "l"] <- st$loc[, "l"] + pp$shift
+  st
+}
+
+# Posterior of the initial states of model i at its particles: ml_res of
+# make_log_g_rb() (mu_n and Rn in the C++ order, posterior_scale), with the
+# series y as fitted (period and centring of fit_bets_models()) and the shift
+# of the centring. Not stored in the fit, to keep bets() fast and small.
+particle_posteriors <- function(object, i) {
+  r <- object$fit$results[[i]]
+  p <- r$particles
   ctrl <- object$control
   ctrl$psi0 <- object$psi0
   ctrl$s2 <- object$s2
+  y <- stats::ts(as.numeric(object$y), frequency = object$period)
   shift <- centring_shift(y)
   y <- y - shift
   mc <- r$model_components
   tn <- colnames(p$theta)
   log_g <- make_log_g_rb(y, mc, tn, ctrl, init_rb_prior(y, mc, tn, ctrl))
   ml <- log_g(transform_theta_to_unconstrained(p$theta, ctrl$phi_min, ctrl$phi_max))$ml_res
-
-  st <- initial_states_t(ml$mu_n, ml$Rn, as.numeric(ml$posterior_scale) / p$sigma2_df,
-                         initial_states_map(mc, object$period))
-  st$loc[, "l"] <- st$loc[, "l"] + shift
-  st
+  list(ml_res = ml, y = y, shift = shift)
 }
 
 # Map from the initial states in the C++ order (l, [b,] s_m, ..., s1) to the R
