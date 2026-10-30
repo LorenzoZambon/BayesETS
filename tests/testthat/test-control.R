@@ -89,7 +89,7 @@ test_that("resolve_bets_control() rejects unknown keys and lists the valid ones"
 test_that("resolve_bets_control() suggests the closest valid name for a typo", {
   expect_error(resolve_bets_control(list(N_drw = 512)),
                "Unknown control entry 'N_drw'\\. Did you mean 'N_draw'\\?\nValid entries:")
-  # Retired names are unknown entries too ('combination' is now a bets() argument)
+  # Retired names are unknown entries too
   expect_error(resolve_bets_control(list(method = "bma")), "Unknown control entry 'method'")
 })
 

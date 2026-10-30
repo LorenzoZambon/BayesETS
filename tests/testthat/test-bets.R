@@ -69,11 +69,6 @@ test_that("bets() model_weights sum to 1 under BMA with multiple models", {
   expect_equal(sum(fit$fit$model_weights), 1, tolerance = 1e-8)
 })
 
-test_that("bets() rejects stacking (not implemented yet)", {
-  expect_error(bets(ts(rnorm(30)), combination = "stacking"),
-               "only Bayesian model averaging is supported")
-})
-
 test_that("bets() default integration ('auto') uses quadrature for d <= 2 and AIS for d >= 3", {
   set.seed(1)
   y <- ts(50 + cumsum(rnorm(32)) + rep(c(3, -1, -4, 2), 8), frequency = 4)
@@ -88,8 +83,7 @@ test_that("control integration forces one method for all models", {
   expect_equal(vapply(fit$fit$results, `[[`, character(1), "integration"), c("ais", "ais"))
 })
 
-test_that("bets() rejects invalid combination, integration and verbose", {
-  expect_error(bets(ts(rnorm(20)), model = "ANN", combination = "avg"), "should be one of")
+test_that("bets() rejects invalid integration and verbose", {
   expect_error(bets(ts(rnorm(20)), model = "ANN", control = list(integration = "mcmc")),
                "integration must be one of")
   expect_error(bets(ts(rnorm(20)), model = "ANN", verbose = "yes"), "verbose must be")

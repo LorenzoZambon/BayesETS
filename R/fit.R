@@ -12,7 +12,6 @@
 fit_bets_models <- function(y,
                             model_components,
                             ctrl,
-                            combination = "bma",
                             integration = c("auto", "quadrature", "ais"),
                             verbose = 0) {
   integration <- match.arg(integration)
@@ -81,7 +80,6 @@ fit_bets_models <- function(y,
   list(
     results = results_list,
     model_weights = model_weights,
-    combination = combination,
     fit_time_per_model = fit_time_per_model,
     elapsed_combination = elapsed_combination
   )
@@ -145,7 +143,7 @@ centring_shift <- function(y) {
 # Fit of a constant series with ETS(A,N,N).
 # The posterior is simple: since residuals are all zero, alpha keeps its prior,
 # the final level is the constant and \sigma^2 is driven by its prior only.
-fit_constant_series <- function(y, ctrl, combination) {
+fit_constant_series <- function(y, ctrl) {
   level <- as.numeric(y[1])
   psi0 <- ctrl$psi0
   n <- 200L
@@ -160,8 +158,8 @@ fit_constant_series <- function(y, ctrl, combination) {
     model_components = c("A", "N", "N", "FALSE"),
     integration = "constant series"
   )
-  list(results = list(result), model_weights = 1, combination = combination,
-       fit_time_per_model = 0, elapsed_combination = 0)
+  list(results = list(result), model_weights = 1, fit_time_per_model = 0,
+       elapsed_combination = 0)
 }
 
 # Integration method of a model:

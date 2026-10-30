@@ -18,8 +18,8 @@
 #'   `level`, a data frame `models` (model, weight, log evidence), a list
 #'   `parameters` with one data frame per model (rows: parameters and sigma;
 #'   columns: mean, sd and interval bounds; `NULL` for failed models), with
-#'   `states = TRUE` a list `states` of the same form, and, with BMA, the
-#'   posterior `probabilities` of trend, damped trend and seasonality.
+#'   `states = TRUE` a list `states` of the same form, and the posterior
+#'   `probabilities` of trend, damped trend and seasonality.
 #'   Printing it shows the models with weight of at least 0.001.
 #'
 #' @examples
@@ -58,9 +58,7 @@ summary.bets <- function(object, level = 95, states = FALSE, ...) {
                           log_evidence = round(vapply(results, `[[`, numeric(1), "log_evidence"), 3)),
       parameters = by_model(function(i) posterior_summary(results[[i]]$particles, probs)),
       states = if (states) by_model(function(i) states_summary(object, i, probs)),
-      probabilities = if (object$fit$combination == "bma") {
-        component_probabilities(object$model_components, w)
-      }
+      probabilities = component_probabilities(object$model_components, w)
     ),
     class = "summary.bets"
   )
