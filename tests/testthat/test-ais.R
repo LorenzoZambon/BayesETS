@@ -51,7 +51,7 @@ test_that("AIS adapts and pools draws until min_ess is reached", {
 # fit_one_model() with AIS: interface
 # ---------------------------------------------------------------------------
 
-test_that("fit_one_model() with AIS returns posterior draws, ESS and proposal", {
+test_that("fit_one_model() with AIS returns weighted particles, ESS and proposal", {
   set.seed(3)
   y <- ts(cumsum(rnorm(30)) + 10, frequency = 4)
   for (mc in list(c("A", "N", "N", "FALSE"), c("A", "A", "A", "TRUE"))) {
@@ -59,13 +59,13 @@ test_that("fit_one_model() with AIS returns posterior draws, ESS and proposal", 
     ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
     res <- fit_one_model(y, mc, ctrl, "ais")
     d <- if (mc[[2]] == "N") 1 else 4
-    expect_named(res, c("thetas", "etas", "states", "sigma2s", "particles", "ess", "n_iter",
-                        "prop_params", "log_evidence", "log_lik_pointwise", "timing"))
+    expect_named(res, c("particles", "ess", "n_iter", "prop_params", "log_evidence", "timing"))
     expect_true(is.finite(res$log_evidence))
     expect_gte(res$ess, ctrl$N_draw[d] / 4)
     expect_gte(res$n_iter, 1L)
     expect_named(res$prop_params, c("mus", "Sigma", "df"))
-    expect_equal(dim(res$thetas), c(ctrl$N_final[d], d))
+    expect_equal(ncol(res$particles$theta), d)
+    expect_gte(nrow(res$particles$theta), ctrl$N_draw[d] / 4)
   }
 })
 
@@ -77,6 +77,6 @@ test_that("fit_one_model() with AIS gives zero weight when min_ess is not reache
   expect_warning(res <- fit_one_model(y, c("A", "N", "N", "FALSE"), ctrl, "ais"),
                  "zero weight")
   expect_equal(res$log_evidence, -Inf)
-  expect_null(res$thetas)
+  expect_null(res$particles)
   expect_equal(res$n_iter, 2L)
 })

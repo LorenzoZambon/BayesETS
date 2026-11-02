@@ -3,12 +3,12 @@ is_count <- function(x) {
   is.numeric(x) && length(x) == 1 && is.finite(x) && x >= 1 && x == round(x)
 }
 
-# Split n draws among the models, proportionally to their weights (the rounding
-# remainder goes to the model with most draws)
-draws_per_model <- function(model_weights, n) {
-  n_k <- round(n * model_weights)
-  n_k[which.max(n_k)] <- n - sum(n_k) + max(n_k)
-  n_k
+# Indices (in their order) of the smallest set of largest weights holding at
+# least 1 - mass of the total: the weights left out hold at most mass
+heavy_set <- function(w, mass) {
+  o <- order(w, decreasing = TRUE)
+  n <- min(sum(cumsum(w[o]) < (1 - mass) * sum(w)) + 1L, length(w))
+  sort(o[seq_len(n)])
 }
 
 # Prints a character matrix with its column names as header, indented by two

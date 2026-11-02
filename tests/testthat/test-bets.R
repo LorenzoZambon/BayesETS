@@ -69,11 +69,6 @@ test_that("bets() model_weights sum to 1 under BMA with multiple models", {
   expect_equal(sum(fit$fit$model_weights), 1, tolerance = 1e-8)
 })
 
-test_that("bets() rejects stacking (not implemented yet)", {
-  expect_error(bets(ts(rnorm(30)), combination = "stacking"),
-               "only Bayesian model averaging is supported")
-})
-
 test_that("bets() default integration ('auto') uses quadrature for d <= 2 and AIS for d >= 3", {
   set.seed(1)
   y <- ts(50 + cumsum(rnorm(32)) + rep(c(3, -1, -4, 2), 8), frequency = 4)
@@ -88,8 +83,7 @@ test_that("control integration forces one method for all models", {
   expect_equal(vapply(fit$fit$results, `[[`, character(1), "integration"), c("ais", "ais"))
 })
 
-test_that("bets() rejects invalid combination, integration and verbose", {
-  expect_error(bets(ts(rnorm(20)), model = "ANN", combination = "avg"), "should be one of")
+test_that("bets() rejects invalid integration and verbose", {
   expect_error(bets(ts(rnorm(20)), model = "ANN", control = list(integration = "mcmc")),
                "integration must be one of")
   expect_error(bets(ts(rnorm(20)), model = "ANN", verbose = "yes"), "verbose must be")
@@ -163,14 +157,14 @@ test_that("constant series: flat forecasts, intervals from the sigma^2 prior", {
   }
   # Narrower for longer series; the scale follows control$psi0
   set.seed(1)
-  w_short <- width95(predict(suppressWarnings(bets(ts(rep(5, 5)))), h = 1, n_traj = 4000))
+  w_short <- width95(predict(suppressWarnings(bets(ts(rep(5, 5)))), h = 1))
   set.seed(1)
-  w_long <- width95(predict(suppressWarnings(bets(ts(rep(5, 50)))), h = 1, n_traj = 4000))
+  w_long <- width95(predict(suppressWarnings(bets(ts(rep(5, 50)))), h = 1))
   expect_lt(w_long, w_short)
   w_psi <- vapply(c(1, 100), function(psi0) {
     set.seed(1)
     width95(predict(suppressWarnings(bets(ts(rep(5, 50)), control = list(psi0 = psi0))),
-                    h = 1, n_traj = 4000))
+                    h = 1))
   }, numeric(1))
   expect_equal(w_psi[2] / w_psi[1], 10, tolerance = 1e-6)
 })

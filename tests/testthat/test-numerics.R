@@ -6,7 +6,7 @@ test_that("co2 ETS(A,A,A): no spurious evidence from exploding recursions", {
   # The recursion explodes for many theta; the old clamp of the quadratic form
   # at 0 gave log evidence ~ +600 instead of ~ -141
   mc <- coerce_model_components("AAA", 12)
-  ctrl <- resolve_bets_control(list(N_final = 50L))
+  ctrl <- resolve_bets_control(list())
   ctrl <- utils::modifyList(ctrl, prior_scales(co2, ctrl))
   le <- vapply(c("quadrature", "ais"), function(im) {
     set.seed(1)
@@ -112,16 +112,21 @@ test_that("bets() fits deterministic series (straight line, trend + exact season
 test_that("final states from the affine maps of the C++ kernel match the recursion", {
   set.seed(1)
   y <- ts(10 + cumsum(rnorm(30)) + rep(c(2, -1, 0, -1), length.out = 30), frequency = 4)
-  ctrl <- resolve_bets_control(list(N_final = 20L))
+  ctrl <- resolve_bets_control(list())
   ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
   for (code in c("ANN", "AAN", "AAdN", "ANA", "AAdA")) {
     mc <- coerce_model_components(code, 4)[[1]]
     flags <- model_flags(mc)
+    tn <- theta_names_of(mc)
+    # 20 random theta, each with random initial states eta (C++ order)
     set.seed(2)
-    res <- fit_one_model(y, mc, ctrl, "ais")
+    out <- make_log_g_rb(y, mc, tn, ctrl, init_rb_prior(y, mc, tn, ctrl))(
+      matrix(stats::rnorm(20 * length(tn)), ncol = length(tn)))
+    eta <- matrix(stats::rnorm(n_states(mc, 4) * 20, sd = 3), ncol = 20)
+    states <- t(final_states_rb(out$ml_res$final_coef, out$ml_res$final_const, eta, 1:20))
     rss <- ets_residuals(as.numeric(y), flags$trend, flags$seas, flags$damped, 4,
-                                res$etas, res$thetas)
-    expect_equal(unname(res$states), unname(rss$states), tolerance = 1e-8, info = code)
+                         eta_to_r_order(eta, mc, 4), out$theta)
+    expect_equal(unname(states), unname(rss$states), tolerance = 1e-8, info = code)
   }
 })
 
@@ -137,5 +142,5 @@ test_that("centring the series leaves the evidence unchanged and restores the le
   # Equal up to the optimiser's tolerance on the mode (~1e-5).
   expect_lt(abs(fit$log_evidence - le_raw), 1e-3)
   # Final level states are on the scale of the data, not of the centred series.
-  expect_lt(abs(mean(fit$states[, "l"]) - mean(tail(y, 5))), 5)
+  expect_lt(abs(sum(fit$particles$w * fit$particles$final_mean["l", ]) - mean(tail(y, 5))), 5)
 })

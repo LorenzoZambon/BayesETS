@@ -12,10 +12,11 @@
 \arguments{
 \item{object}{A fitted object from \code{\link[=bets]{bets()}}.}
 
-\item{type}{\code{"mean"} (default): posterior mean of the fitted values, averaged
-over the posterior draws of each model and over the models with their
-weights; the residuals are \code{y} minus this mean. \code{"draws"}: one row per
-posterior draw, with the draws of each model in proportion to its weight.}
+\item{type}{\code{"mean"} (default): posterior mean of the fitted values, over the
+models (with their weights) and over the posterior of their parameters
+(computed exactly, without sampling); the residuals are \code{y} minus this
+mean. \code{"draws"}: one row per posterior draw, from the posterior of the
+model combination.}
 
 \item{n_draws}{Number of rows for \code{type = "draws"} (default 1000).}
 

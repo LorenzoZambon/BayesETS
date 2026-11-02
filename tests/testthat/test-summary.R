@@ -11,21 +11,35 @@ local({
 
 test_that("each model stores its weighted particles", {
   n <- length(fit_seas$y)
-  for (r in fit_seas$fit$results) {
+  for (i in seq_along(fit_seas$fit$results)) {
+    r <- fit_seas$fit$results[[i]]
     p <- r$particles
-    expect_identical(colnames(p$theta), colnames(r$thetas))
+    expect_identical(colnames(p$theta), theta_names_of(r$model_components))
     expect_length(p$w, nrow(p$theta))
     expect_length(p$sigma2_scale, nrow(p$theta))
     expect_true(all(p$w > 0))
     expect_equal(sum(p$w), 1, tolerance = 1e-12)
     expect_equal(p$sigma2_df, fit_seas$control$nu0 + n)
+    # Posterior of the final states, for the models that enter the forecasts
+    if (fit_seas$fit$model_weights[i] >= 1e-4) {
+      states <- state_names_of(r$model_components, fit_seas$period)
+      expect_identical(dimnames(p$final_mean), list(states, NULL))
+      expect_identical(dim(p$final_R), c(length(states), length(states), length(p$w)))
+      expect_identical(dimnames(p$final_R)[[2]], states)
+    } else {
+      expect_null(p$final_mean)
+    }
   }
 })
 
-test_that("posterior means from the particles agree with the posterior draws", {
+test_that("posterior means from the particles agree with draws from them", {
+  set.seed(1)
   for (r in fit_seas$fit$results) {
-    s <- posterior_summary(r$particles)
-    d <- cbind(r$thetas, sigma = sqrt(r$sigma2s))
+    p <- r$particles
+    s <- posterior_summary(p)
+    k <- sample.int(length(p$w), 5000, replace = TRUE, prob = p$w)
+    d <- cbind(p$theta[k, , drop = FALSE],
+               sigma = sqrt(p$sigma2_scale[k] / stats::rchisq(5000, df = p$sigma2_df)))
     se <- apply(d, 2, stats::sd) / sqrt(nrow(d))
     expect_true(all(abs(s[colnames(d), "mean"] - colMeans(d)) < 5 * se + 1e-6),
                 info = ets_label(r$model_components))
@@ -138,11 +152,20 @@ test_that("summary(states = TRUE): normalised initial states agree with the post
   s <- summary(fit_seas, states = TRUE)
   expect_identical(rownames(s$states$ANN), "l")
   expect_identical(rownames(s$states$AAdA), c("l", "b", "s1", "s2", "s3", "s4"))
+  set.seed(1)
   for (i in seq_along(fit_seas$fit$results)) {
     r <- fit_seas$fit$results[[i]]
+    p <- r$particles
     st <- states_summary(fit_seas, i)   # not rounded, unlike s$states
-    # draws normalised as in summary(): seasonal states summing to zero
-    e <- r$etas
+    # Draws from the particles: theta, \sigma^2, then eta = mu_n + \sigma t(Rn) z
+    pp <- particle_posteriors(fit_seas, i)
+    k <- sample.int(length(p$w), 5000, replace = TRUE, prob = p$w)
+    sigma <- sqrt(p$sigma2_scale[k] / stats::rchisq(5000, df = p$sigma2_df))
+    z <- matrix(stats::rnorm(nrow(pp$ml_res$mu_n) * 5000), ncol = 5000)
+    eta <- final_states_rb(pp$ml_res$Rn, pp$ml_res$mu_n, sweep(z, 2, sigma, "*"), k)
+    e <- eta_to_r_order(eta, r$model_components, fit_seas$period)
+    e[, "l"] <- e[, "l"] + pp$shift
+    # normalised as in summary(): seasonal states summing to zero
     sc <- grep("^s", colnames(e))
     if (length(sc) > 0) {
       ms <- rowMeans(e[, sc, drop = FALSE])

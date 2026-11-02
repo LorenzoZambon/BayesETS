@@ -20,8 +20,8 @@ An object of class \code{summary.bets}: a list with the \code{call}, the
 \code{level}, a data frame \code{models} (model, weight, log evidence), a list
 \code{parameters} with one data frame per model (rows: parameters and sigma;
 columns: mean, sd and interval bounds; \code{NULL} for failed models), with
-\code{states = TRUE} a list \code{states} of the same form, and, with BMA, the
-posterior \code{probabilities} of trend, damped trend and seasonality.
+\code{states = TRUE} a list \code{states} of the same form, and the posterior
+\code{probabilities} of trend, damped trend and seasonality.
 Printing it shows the models with weight of at least 0.001.
 }
 \description{

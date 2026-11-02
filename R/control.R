@@ -4,13 +4,12 @@ resolve_by_d <- function(param, d) {
   as.integer(param[[min(as.integer(d), length(param))]])
 }
 
-# Default control parameters. N_draw, N_final and n_quad have one value per
-# number d = 1, ..., 4 of smoothing parameters (see resolve_by_d()).
+# Default control parameters. N_draw and n_quad have one value per number
+# d = 1, ..., 4 of smoothing parameters (see resolve_by_d()).
 bets_control_defaults <- function() {
   list(
     N_iter_max = 30,
     N_draw     = c(128L, 256L, 512L, 1024L),
-    N_final    = c(200L, 300L, 500L, 500L),
     nu0 = 3,
     psi0 = NULL,
     phi_min = 0.8,
@@ -58,7 +57,7 @@ check_bets_control <- function(ctrl) {
   by_d <- ", or one value per number of smoothing parameters"
 
   if (!valid(ctrl$N_iter_max, integer_from(1))) bad("N_iter_max", "a positive integer")
-  for (nm in c("N_draw", "N_final", "n_quad")) {
+  for (nm in c("N_draw", "n_quad")) {
     if (!valid(ctrl[[nm]], integer_from(1), 1:4)) bad(nm, paste0("a positive integer", by_d))
   }
   if (!is.null(ctrl$min_ess) && !valid(ctrl$min_ess, positive, 1:4)) {

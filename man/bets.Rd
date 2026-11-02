@@ -4,14 +4,7 @@
 \alias{bets}
 \title{Fit a BETS (Bayesian ETS) model}
 \usage{
-bets(
-  y,
-  model = "ZZZ",
-  combination = c("bma", "stacking"),
-  additive.only = TRUE,
-  verbose = 0,
-  control = list()
-)
+bets(y, model = "ZZZ", additive.only = TRUE, verbose = 0, control = list())
 }
 \arguments{
 \item{y}{Univariate time series.}
@@ -19,9 +12,6 @@ bets(
 \item{model}{Models to fit: either an ETS code (made of 3 or 4 characters, see \strong{Details})
 or a vector of ETS codes. Default is \code{"ZZZ"} (all supported models).
 Duplicate models are dropped.}
-
-\item{combination}{How the models are combined; only \code{"bma"} (default) is
-currently supported.}
 
 \item{additive.only}{Logical; only \code{TRUE} (default) is currently supported.}
 
@@ -119,8 +109,6 @@ models do, \code{bets()} stops with an error.
 updated (default 0.9).
 \item \code{n_quad}: number of Gauss-Hermite nodes per dimension, indexed by \code{d}.
 Default \code{c(21, 21, 9, 7)}.
-\item \code{N_final}: number of posterior draws kept per model, used by
-\code{\link[=predict.bets]{predict.bets()}}, indexed by \code{d}. Default \code{c(200, 300, 500, 500)}.
 }
 
 Priors:

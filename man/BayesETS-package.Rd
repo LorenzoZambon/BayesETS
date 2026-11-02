@@ -6,7 +6,7 @@
 \alias{BayesETS-package}
 \title{BayesETS: Forecasting using Bayesian ETS}
 \description{
-Bayesian exponential smoothing (ETS) state space models for univariate time series, accounting for both parameter and model uncertainty. The initial states and the error variance are integrated out analytically, under a conjugate Normal-inverse-chi-squared prior; the smoothing parameters are integrated numerically, by adaptive Gauss-Hermite quadrature (AGHQ) or adaptive importance sampling (AIS). The ETS models are combined by Bayesian model averaging (BMA), and forecasts are obtained by simulating future sample paths. Currently only additive models are supported.
+Bayesian exponential smoothing (ETS) state space models for univariate time series, accounting for both parameter and model uncertainty. The initial states and the error variance are integrated out analytically, under a conjugate Normal-inverse-chi-squared prior; the smoothing parameters are integrated numerically, by adaptive Gauss-Hermite quadrature (AGHQ) or adaptive importance sampling (AIS). The ETS models are combined by Bayesian model averaging (BMA); the forecast distribution is computed in closed form, as a mixture of Student-t distributions. Currently only additive models are supported.
 }
 \seealso{
 Useful links:

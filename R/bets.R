@@ -14,8 +14,6 @@
 #' @param model Models to fit: either an ETS code (made of 3 or 4 characters, see **Details**)
 #' or a vector of ETS codes. Default is `"ZZZ"` (all supported models).
 #'   Duplicate models are dropped.
-#' @param combination How the models are combined; only `"bma"` (default) is
-#'   currently supported.
 #' @param additive.only Logical; only `TRUE` (default) is currently supported.
 #' @param verbose `0` (default) prints nothing,
 #' `1` prints the model weights,
@@ -86,8 +84,6 @@
 #'   updated (default 0.9).
 #' - `n_quad`: number of Gauss-Hermite nodes per dimension, indexed by `d`.
 #'   Default `c(21, 21, 9, 7)`.
-#' - `N_final`: number of posterior draws kept per model, used by
-#'   [predict.bets()], indexed by `d`. Default `c(200, 300, 500, 500)`.
 #'
 #' Priors:
 #' - `nu0`, `psi0`: parameters of the prior of the error variance \eqn{\sigma^2},
@@ -126,7 +122,6 @@
 #' @export
 bets <- function(y,
                  model = "ZZZ",
-                 combination = c("bma", "stacking"),
                  additive.only = TRUE,
                  verbose = 0,
                  control = list()) {
@@ -149,11 +144,6 @@ bets <- function(y,
     stop("additive.only must be TRUE or FALSE")
   } else if (!additive.only) {
     stop("Currently only additive-error models are supported (additive.only = TRUE)")
-  }
-
-  combination <- match.arg(combination)
-  if (combination == "stacking") {
-    stop("Currently only Bayesian model averaging is supported (combination = \"bma\")")
   }
 
   if (!(is.numeric(verbose) || is.logical(verbose)) || length(verbose) != 1 || is.na(verbose)) {
@@ -183,7 +173,7 @@ bets <- function(y,
     warning("y is constant! Only ETS(A,N,N) is used: the forecasts are flat and ",
             "the prediction intervals might be unreliable.",
             call. = FALSE)
-    fit <- fit_constant_series(y_fit, fit_ctrl, combination)
+    fit <- fit_constant_series(y_fit, fit_ctrl)
     model_components <- list(fit$results[[1]]$model_components)
 
   } else {                                      # non-constant series
@@ -191,7 +181,6 @@ bets <- function(y,
       y = y_fit,
       model_components = model_components,
       ctrl = fit_ctrl,
-      combination = combination,
       integration = ctrl$integration,
       verbose = as.numeric(verbose)
     )
@@ -219,9 +208,6 @@ print.bets <- function(x, ...) {
   cat(sprintf("  length of the series: %d\n", length(x$y)))
   cat(sprintf("  frequency: %s\n", format(stats::frequency(x$y))))
 
-  print_comb <- ifelse(x$fit$combination == "bma", "Bayesian Model Averaging", "Stacking")
-  cat(sprintf("  combination: %s\n", print_comb))
-
   # Models with weight >= 0.001, by decreasing weight; the others in one line
   mc <- x$model_components
   w <- x$fit$model_weights
@@ -231,7 +217,7 @@ print.bets <- function(x, ...) {
   cat_table(posterior_means_table(x$fit$results[shown], labels[shown], w[shown]))
   cat_negligible(labels, shown)
 
-  if (x$fit$combination == "bma") cat_probabilities(component_probabilities(mc, w))
+  cat_probabilities(component_probabilities(mc, w))
   invisible(x)
 }
 

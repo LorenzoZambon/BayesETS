@@ -115,8 +115,12 @@ List build_design_and_c_batch(NumericVector yR,
       // y~_t = y_t - c_t(\theta)
       double yt = y(t) - fd;
 
-      // Rank-1 updates
-      XtXi += fc * fc.t();
+      // Rank-1 updates (only the upper triangle of X'X, which is symmetric)
+      const double* f = fc.memptr();
+      for (int c = 0; c < n_eta; c++) {
+        double* col = XtXi.colptr(c);
+        for (int r = 0; r <= c; r++) col[r] += f[r] * f[c];
+      }
       Xtyi += fc * yt;
       ytyi += yt * yt;
 
@@ -145,7 +149,7 @@ List build_design_and_c_batch(NumericVector yR,
       }
     }
 
-    XtX.slice(i) = XtXi;
+    XtX.slice(i) = symmatu(XtXi);
     Xty.col(i) = Xtyi;
     yty(i) = ytyi;
 
@@ -196,6 +200,29 @@ arma::mat final_states_rb(const arma::cube& final_coef,
     states.col(j) = final_coef.slice(k).t() * eta.col(j) + final_const.col(k);
   }
   return states;
+}
+
+
+// ---------------------------------------------------------------------------
+// Posterior of the final states at the particles idx (1-based), given \sigma^2:
+// x_T ~ N(mean, \sigma^2 R' R), with mean = final_coef' mu_n + final_const and
+// R = Rn final_coef (R' R can be near-singular: no Cholesky factor of it)
+// ---------------------------------------------------------------------------
+
+// [[Rcpp::export]]
+List final_states_posterior_rb(const arma::cube& final_coef,
+                               const arma::mat& final_const,
+                               const arma::mat& mu_n,
+                               const arma::cube& Rn,
+                               const arma::uvec& idx) {
+  mat mean(final_coef.n_cols, idx.n_elem);
+  cube R(Rn.n_rows, final_coef.n_cols, idx.n_elem);
+  for (uword j = 0; j < idx.n_elem; j++) {
+    uword k = idx(j) - 1;
+    mean.col(j) = final_coef.slice(k).t() * mu_n.col(k) + final_const.col(k);
+    R.slice(j) = Rn.slice(k) * final_coef.slice(k);
+  }
+  return List::create(_["mean"] = mean, _["R"] = R);
 }
 
 

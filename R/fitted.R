@@ -3,10 +3,11 @@
 #' One-step-ahead fitted values and residuals on the training series.
 #'
 #' @param object A fitted object from [bets()].
-#' @param type `"mean"` (default): posterior mean of the fitted values, averaged
-#'   over the posterior draws of each model and over the models with their
-#'   weights; the residuals are `y` minus this mean. `"draws"`: one row per
-#'   posterior draw, with the draws of each model in proportion to its weight.
+#' @param type `"mean"` (default): posterior mean of the fitted values, over the
+#'   models (with their weights) and over the posterior of their parameters
+#'   (computed exactly, without sampling); the residuals are `y` minus this
+#'   mean. `"draws"`: one row per posterior draw, from the posterior of the
+#'   model combination.
 #' @param n_draws Number of rows for `type = "draws"` (default 1000).
 #' @param ... Unused.
 #'
@@ -50,33 +51,61 @@ residuals.bets <- function(object, type = c("mean", "draws"), n_draws = 1000, ..
   }
 }
 
-# One-step residuals of the posterior draws: their weighted mean over draws and
-# models ("mean"), or n_draws rows of draws, resampled by model weight ("draws")
+# One-step residuals, from the particles of the models. "mean": given theta, the
+# residuals are affine in the initial states eta, so their posterior mean is the
+# residuals at the posterior mean mu_n of eta; averaged over particles and models.
+# "draws": n_draws rows, each from a particle drawn by its weight (model weight x
+# particle weight), with \sigma^2 and eta from their posteriors.
 one_step_residuals <- function(object, type, n_draws) {
   if (type == "draws" && !is_count(n_draws)) {
     stop("n_draws must be a single positive integer")
   }
-  y <- as.numeric(object$y)
   results <- object$fit$results
   w <- object$fit$model_weights
-  n_k <- if (type == "draws") draws_per_model(w, as.integer(n_draws))
+  L <- length(object$y)
+  # Models with particles (not failed) and positive weight
+  models <- which(w > 0 & !vapply(results, function(r) is.null(r$particles), logical(1)))
 
-  out <- lapply(seq_along(results), function(k) {
-    r <- results[[k]]
-    if (w[k] == 0 || (type == "draws" && n_k[k] == 0)) return(NULL)
-    idx <- if (type == "draws") {
-      sample(nrow(r$thetas), n_k[k], replace = TRUE)
+  if (type == "draws") {
+    n_k <- vapply(results[models], function(r) length(r$particles$w), integer(1))
+    model <- rep(models, n_k)
+    particle <- sequence(n_k)
+    pw <- unlist(lapply(models, function(i) w[i] * results[[i]]$particles$w))
+    k <- sample.int(length(pw), as.integer(n_draws), replace = TRUE, prob = pw)
+    out <- matrix(0, n_draws, L)
+  } else {
+    out <- numeric(L)
+  }
+
+  for (i in models) {
+    r <- results[[i]]
+    # Constant series: zero residuals
+    if (r$integration == "constant series") next
+    p <- r$particles
+    pp <- particle_posteriors(object, i)
+    ml <- pp$ml_res
+    if (type == "mean") {
+      idx <- seq_along(p$w)
+      eta <- ml$mu_n
     } else {
-      seq_len(nrow(r$thetas))
+      rows <- which(model[k] == i)
+      if (length(rows) == 0) next
+      idx <- particle[k[rows]]
+      sigma2 <- p$sigma2_scale[idx] / stats::rchisq(length(rows), df = p$sigma2_df)
+      # eta = mu_n + \sigma t(Rn) z, z ~ N(0, I)
+      z <- matrix(stats::rnorm(nrow(ml$mu_n) * length(rows)), ncol = length(rows))
+      eta <- final_states_rb(ml$Rn, ml$mu_n, sweep(z, 2, sqrt(sigma2), "*"), idx)
     }
-    flags <- model_flags(r$model_components)
-    m <- max(1L, sum(grepl("^s\\d+$", colnames(r$etas))))   # seasonal period
-    E <- ets_residuals(y, flags$trend, flags$seas, flags$damped, m,
-                       r$etas[idx, , drop = FALSE], r$thetas[idx, , drop = FALSE],
-                       return_residuals = TRUE)$residuals
-    if (type == "mean") w[k] * colMeans(E) else E
-  })
-  out <- Filter(Negate(is.null), out)
+    E <- residuals_at(pp$y, r$model_components, object$period, eta, p$theta[idx, , drop = FALSE])
+    if (type == "mean") out <- out + w[i] * colSums(p$w * E) else out[rows, ] <- E
+  }
+  out
+}
 
-  if (type == "mean") Reduce(`+`, out) else do.call(rbind, out)
+# One-step residuals (one row per column of eta) of an additive ETS model on the
+# series y, from the initial states eta (C++ order) with smoothing parameters theta
+residuals_at <- function(y, model_components, m, eta, theta) {
+  flags <- model_flags(model_components)
+  ets_residuals(as.numeric(y), flags$trend, flags$seas, flags$damped, if (flags$seas) m else 1L,
+                eta_to_r_order(eta, model_components, m), theta, return_residuals = TRUE)$residuals
 }

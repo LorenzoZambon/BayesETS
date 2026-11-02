@@ -30,6 +30,43 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// ets_t_components
+List ets_t_components(const arma::mat& final_mean, const arma::cube& final_R, const arma::uvec& idx, const arma::vec& alpha, const arma::vec& beta, const arma::vec& phi, const arma::vec& gamma, const arma::vec& s2, bool trend, bool seas, int h);
+RcppExport SEXP _BayesETS_ets_t_components(SEXP final_meanSEXP, SEXP final_RSEXP, SEXP idxSEXP, SEXP alphaSEXP, SEXP betaSEXP, SEXP phiSEXP, SEXP gammaSEXP, SEXP s2SEXP, SEXP trendSEXP, SEXP seasSEXP, SEXP hSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type final_mean(final_meanSEXP);
+    Rcpp::traits::input_parameter< const arma::cube& >::type final_R(final_RSEXP);
+    Rcpp::traits::input_parameter< const arma::uvec& >::type idx(idxSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type alpha(alphaSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type beta(betaSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type gamma(gammaSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type s2(s2SEXP);
+    Rcpp::traits::input_parameter< bool >::type trend(trendSEXP);
+    Rcpp::traits::input_parameter< bool >::type seas(seasSEXP);
+    Rcpp::traits::input_parameter< int >::type h(hSEXP);
+    rcpp_result_gen = Rcpp::wrap(ets_t_components(final_mean, final_R, idx, alpha, beta, phi, gamma, s2, trend, seas, h));
+    return rcpp_result_gen;
+END_RCPP
+}
+// t_mixture_quantiles
+arma::mat t_mixture_quantiles(const arma::vec& w, const arma::mat& location, const arma::mat& scale, double df, const arma::vec& probs, double tol);
+RcppExport SEXP _BayesETS_t_mixture_quantiles(SEXP wSEXP, SEXP locationSEXP, SEXP scaleSEXP, SEXP dfSEXP, SEXP probsSEXP, SEXP tolSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type w(wSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type location(locationSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type scale(scaleSEXP);
+    Rcpp::traits::input_parameter< double >::type df(dfSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type probs(probsSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    rcpp_result_gen = Rcpp::wrap(t_mixture_quantiles(w, location, scale, df, probs, tol));
+    return rcpp_result_gen;
+END_RCPP
+}
 // build_design_and_c_batch
 List build_design_and_c_batch(NumericVector yR, bool trend, bool seas, bool damped, int m, NumericMatrix paramsR, bool return_final);
 RcppExport SEXP _BayesETS_build_design_and_c_batch(SEXP yRSEXP, SEXP trendSEXP, SEXP seasSEXP, SEXP dampedSEXP, SEXP mSEXP, SEXP paramsRSEXP, SEXP return_finalSEXP) {
@@ -61,6 +98,21 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// final_states_posterior_rb
+List final_states_posterior_rb(const arma::cube& final_coef, const arma::mat& final_const, const arma::mat& mu_n, const arma::cube& Rn, const arma::uvec& idx);
+RcppExport SEXP _BayesETS_final_states_posterior_rb(SEXP final_coefSEXP, SEXP final_constSEXP, SEXP mu_nSEXP, SEXP RnSEXP, SEXP idxSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::cube& >::type final_coef(final_coefSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type final_const(final_constSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type mu_n(mu_nSEXP);
+    Rcpp::traits::input_parameter< const arma::cube& >::type Rn(RnSEXP);
+    Rcpp::traits::input_parameter< const arma::uvec& >::type idx(idxSEXP);
+    rcpp_result_gen = Rcpp::wrap(final_states_posterior_rb(final_coef, final_const, mu_n, Rn, idx));
+    return rcpp_result_gen;
+END_RCPP
+}
 // marginal_likelihood_rb
 List marginal_likelihood_rb(arma::cube XtX_cube, arma::mat Xty_mat, arma::vec yty_vec, arma::vec eta0, arma::mat V0, double nu0, double psi0, int L, bool return_posterior);
 RcppExport SEXP _BayesETS_marginal_likelihood_rb(SEXP XtX_cubeSEXP, SEXP Xty_matSEXP, SEXP yty_vecSEXP, SEXP eta0SEXP, SEXP V0SEXP, SEXP nu0SEXP, SEXP psi0SEXP, SEXP LSEXP, SEXP return_posteriorSEXP) {
@@ -83,8 +135,11 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_BayesETS_ets_residuals", (DL_FUNC) &_BayesETS_ets_residuals, 8},
+    {"_BayesETS_ets_t_components", (DL_FUNC) &_BayesETS_ets_t_components, 11},
+    {"_BayesETS_t_mixture_quantiles", (DL_FUNC) &_BayesETS_t_mixture_quantiles, 6},
     {"_BayesETS_build_design_and_c_batch", (DL_FUNC) &_BayesETS_build_design_and_c_batch, 7},
     {"_BayesETS_final_states_rb", (DL_FUNC) &_BayesETS_final_states_rb, 4},
+    {"_BayesETS_final_states_posterior_rb", (DL_FUNC) &_BayesETS_final_states_posterior_rb, 5},
     {"_BayesETS_marginal_likelihood_rb", (DL_FUNC) &_BayesETS_marginal_likelihood_rb, 9},
     {NULL, NULL, 0}
 };

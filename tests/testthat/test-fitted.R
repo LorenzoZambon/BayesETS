@@ -28,6 +28,18 @@ test_that("type = 'draws': n_draws rows, consistent with the mean", {
   expect_lt(max(abs(colMeans(rd) - as.numeric(residuals(fit_fr)))), 0.1 * sd(fit_fr$y))
 })
 
+test_that("type = 'mean' is exact, without random numbers", {
+  set.seed(3)
+  seed <- get(".Random.seed", envir = globalenv())
+  r <- as.numeric(residuals(fit_fr))
+  expect_identical(get(".Random.seed", envir = globalenv()), seed)
+  # Mean of many draws: within Monte Carlo error
+  n <- 20000
+  rd <- residuals(fit_fr, type = "draws", n_draws = n)
+  z <- (colMeans(rd) - r) / (apply(rd, 2, stats::sd) / sqrt(n))
+  expect_lt(max(abs(z)), 5)
+})
+
 test_that("the mean uses the model weights", {
   set.seed(3)
   y <- ts(cumsum(rnorm(50)))
@@ -36,6 +48,11 @@ test_that("the mean uses the model weights", {
   set.seed(1)
   fit_two <- bets(y, model = list("ANN", "AAN"), control = list(prior_models = c(1, 0)))
   expect_equal(residuals(fit_two), residuals(fit_one))
+  # Draws only from the model with positive weight
+  set.seed(2)
+  d_two <- residuals(fit_two, type = "draws", n_draws = 50)
+  set.seed(2)
+  expect_equal(d_two, residuals(fit_one, type = "draws", n_draws = 50))
   # One-step residuals of a random walk are close to its differences
   expect_gt(cor(as.numeric(residuals(fit_one))[-1], diff(as.numeric(y))), 0.9)
 })
