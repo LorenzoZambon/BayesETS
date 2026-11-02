@@ -35,8 +35,7 @@ Key features:
 
 ## Installation
 
-You can install the **stable** version from
-[CRAN](https://cran.r-project.org/package=BayesETS):
+You can install the **stable** version from CRAN:
 
 ``` r
 install.packages("BayesETS")
