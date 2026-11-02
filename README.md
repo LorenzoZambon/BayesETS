@@ -35,7 +35,14 @@ Key features:
 
 ## Installation
 
-You can install the development version from
+You can install the **stable** version from
+[CRAN](https://cran.r-project.org/package=BayesETS):
+
+``` r
+install.packages("BayesETS")
+```
+
+You can install the **development** version from
 [GitHub](https://github.com/LorenzoZambon/BayesETS):
 
 ``` r
@@ -62,7 +69,6 @@ print(fit)  # for each model, show weight and posterior means of its parameters
 #>   call: bets(y = USAccDeaths)
 #>   length of the series: 72
 #>   frequency: 12
-#>   combination: Bayesian Model Averaging
 #> 
 #>   Model weights and posterior means of the parameters:
 #> 
@@ -210,12 +216,12 @@ with the M3 test sets (horizons 6, 8 and 18):
 <thead><tr><th>Period (series)</th><th>Method</th><th>MASE</th><th>Coverage 80%</th>
 <th>Coverage 95%</th><th>MSIS</th><th>Time (s)</th></tr></thead>
 <tbody>
-<tr><td rowspan="2">Yearly (645)</td><td>ets</td><td align="right">2.893</td><td align="right">0.645</td><td align="right">0.780</td><td align="right">41.87</td><td align="right">0.003</td></tr>
+<tr><td rowspan="2">Yearly (645)</td><td>ets</td><td align="right">2.893</td><td align="right">0.645</td><td align="right">0.780</td><td align="right">41.87</td><td align="right">0.004</td></tr>
 <tr><td>bets</td><td align="right">2.862</td><td align="right">0.718</td><td align="right">0.873</td><td align="right">31.37</td><td align="right">0.016</td></tr>
 <tr><td rowspan="2">Quarterly (756)</td><td>ets</td><td align="right">1.177</td><td align="right">0.690</td><td align="right">0.839</td><td align="right">11.90</td><td align="right">0.029</td></tr>
-<tr><td>bets</td><td align="right">1.168</td><td align="right">0.748</td><td align="right">0.901</td><td align="right">9.99</td><td align="right">0.052</td></tr>
-<tr><td rowspan="2">Monthly (1428)</td><td>ets</td><td align="right">0.880</td><td align="right">0.761</td><td align="right">0.904</td><td align="right">7.06</td><td align="right">0.128</td></tr>
-<tr><td>bets</td><td align="right">0.866</td><td align="right">0.822</td><td align="right">0.947</td><td align="right">6.53</td><td align="right">0.101</td></tr>
+<tr><td>bets</td><td align="right">1.168</td><td align="right">0.748</td><td align="right">0.901</td><td align="right">9.99</td><td align="right">0.054</td></tr>
+<tr><td rowspan="2">Monthly (1428)</td><td>ets</td><td align="right">0.880</td><td align="right">0.761</td><td align="right">0.904</td><td align="right">7.06</td><td align="right">0.131</td></tr>
+<tr><td>bets</td><td align="right">0.866</td><td align="right">0.822</td><td align="right">0.947</td><td align="right">6.53</td><td align="right">0.098</td></tr>
 </tbody>
 </table>
 

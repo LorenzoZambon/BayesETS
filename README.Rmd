@@ -47,7 +47,13 @@ Key features:
 
 ## Installation
 
-You can install the development version from [GitHub](https://github.com/LorenzoZambon/BayesETS):
+You can install the **stable** version from [CRAN](https://cran.r-project.org/package=BayesETS):
+
+```r
+install.packages("BayesETS")
+```
+
+You can install the **development** version from [GitHub](https://github.com/LorenzoZambon/BayesETS):
 
 ```r
 # install.packages("remotes")
