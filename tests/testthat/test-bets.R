@@ -28,8 +28,9 @@ test_that("bets() rejects unknown control keys", {
 test_that("bets() stops with a clear error when no model can be fitted", {
   set.seed(1)
   expect_error(
-    suppressWarnings(bets(ts(rnorm(30)), model = list("ANN", "AAdN"),
-                          control = list(integration = "ais", min_ess = 1e6, N_iter_max = 1))),
+    suppressWarnings(with_mocked_bindings(
+      bets(ts(rnorm(30)), model = list("ANN", "AAdN"), control = list(integration = "ais")),
+      integrate_ais = failing_ais)),
     "No model could be fitted")
 })
 

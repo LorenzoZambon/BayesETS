@@ -95,14 +95,24 @@ test_that("fit_one_model() with AIS returns weighted particles, ESS and proposal
   }
 })
 
-test_that("fit_one_model() with AIS gives zero weight when min_ess is not reached", {
+test_that("fit_one_model() with AIS keeps the estimate when min_ess is not reached", {
   set.seed(1)
   y <- ts(rnorm(20))
   ctrl <- resolve_bets_control(list(min_ess = 1e6, N_iter_max = 2))
   ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
   expect_warning(res <- fit_one_model(y, c("A", "N", "N", "FALSE"), ctrl, "ais"),
-                 "zero weight")
-  expect_equal(res$log_evidence, -Inf)
-  expect_null(res$particles)
+                 "Model ANN\\. AIS: ESS = .* the weight of the model is approximate")
+  expect_true(is.finite(res$log_evidence))
+  expect_false(is.null(res$particles))
   expect_equal(res$n_iter, 2L)
+})
+
+test_that("integrate_ais() gives zero weight only if log g is not finite at any draw", {
+  ctrl <- resolve_bets_control(list())
+  set.seed(1)
+  int <- integrate_ais(function(Z) list(log_g = rep(-Inf, nrow(Z))), c(0, 0, 0),
+                       c("alpha", "beta", "gamma"), ctrl)
+  expect_equal(int$log_evidence, -Inf)
+  expect_match(int$failure, "not finite at any draw; the model gets zero weight")
+  expect_null(int$low_ess)
 })

@@ -76,8 +76,8 @@
 #'   `c(128, 256, 512, 1024)`. Powers of 2 work best with Sobol points.
 #' - `min_ess`, `N_iter_max`: AIS stops when the effective sample size reaches
 #'   `min_ess` (default `N_draw / 4`), or after `N_iter_max` iterations
-#'   (default 30). In the second case the model gets zero weight; if all
-#'   models do, `bets()` stops with an error.
+#'   (default 30). In the second case the weight of the model is approximate
+#'   (with a warning).
 #' - `is_df`, `is_scale`: degrees of freedom (default 5) and scale inflation
 #'   (default 4) of the AIS proposal.
 #' - `lr`: maximum weight of the new estimates when the AIS proposal is

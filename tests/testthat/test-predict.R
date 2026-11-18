@@ -343,8 +343,8 @@ test_that("constant series: exact bounds at h = 1", {
 
 test_that("predict.bets() skips failed models", {
   set.seed(1)
-  fit <- suppressWarnings(bets(ts(cumsum(rnorm(30))), model = c("ANN", "AAdN"),
-                               control = list(min_ess = 1e6, N_iter_max = 1)))
+  fit <- suppressWarnings(with_mocked_bindings(
+    bets(ts(cumsum(rnorm(30))), model = c("ANN", "AAdN")), integrate_ais = failing_ais))
   expect_equal(fit$fit$model_weights[2], 0)
   fc <- predict(fit, h = 4, return_mixture = TRUE)
   expect_true(all(is.finite(c(fc$mean, fc$lower, fc$upper))))

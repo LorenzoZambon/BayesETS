@@ -42,8 +42,8 @@ test_that("plot.bets() plots any fitted model on request, and errors for the oth
   expect_no_error(plot(fit_plot, models = lowest, ask = FALSE))
   expect_error(plot(fit_plot, models = "AAA"), "models must be labels of the fitted models")
   set.seed(1)
-  f <- suppressWarnings(bets(USAccDeaths, model = c("ANN", "AAdA"),
-                             control = list(min_ess = 1e6, N_iter_max = 2)))
+  f <- suppressWarnings(with_mocked_bindings(bets(USAccDeaths, model = c("ANN", "AAdA")),
+                                             integrate_ais = failing_ais))
   expect_error(plot(f, models = "AAdA"), "No posterior for the failed model")
   expect_error(plot(fit_plot, level = 100), "level must be")
 })

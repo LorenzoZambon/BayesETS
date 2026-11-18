@@ -6,7 +6,9 @@
 # posterior mode, adapted while the ESS is below min_ess.
 
 # AIS over the smoothing parameters, from z_start: log evidence and weighted
-# draws of all iterations (theta, w, ml_res); failure: message, or NULL
+# draws of all iterations (theta, w, ml_res). failure: message if log g is not
+# finite at any draw (zero weight), or NULL. low_ess: message if the ESS is
+# below min_ess (the estimate is kept, approximate weight), or NULL
 integrate_ais <- function(log_g_fn, z_start, theta_names, ctrl,
                           log_g_mode = log_g_fn) {
   d <- length(theta_names)
@@ -31,8 +33,11 @@ integrate_ais <- function(log_g_fn, z_start, theta_names, ctrl,
     n_iter = ais$n_iter,
     proposal = proposal,
     timing = ais$timing,
-    failure = if (ais$ess < min_ess) {
-      sprintf("AIS: ESS = %.0f below min_ess = %.0f after %d iterations; the model gets zero weight",
+    failure = if (!is.finite(ais$log_evidence)) {
+      "AIS: log g is not finite at any draw; the model gets zero weight"
+    },
+    low_ess = if (is.finite(ais$log_evidence) && ais$ess < min_ess) {
+      sprintf("AIS: ESS = %.0f below min_ess = %.0f after %d iterations; the weight of the model is approximate",
               ais$ess, min_ess, ais$n_iter)
     }
   )

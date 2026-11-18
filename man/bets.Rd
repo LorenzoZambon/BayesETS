@@ -101,8 +101,8 @@ posterior mode. Default 64.
 \code{c(128, 256, 512, 1024)}. Powers of 2 work best with Sobol points.
 \item \code{min_ess}, \code{N_iter_max}: AIS stops when the effective sample size reaches
 \code{min_ess} (default \code{N_draw / 4}), or after \code{N_iter_max} iterations
-(default 30). In the second case the model gets zero weight; if all
-models do, \code{bets()} stops with an error.
+(default 30). In the second case the weight of the model is approximate
+(with a warning).
 \item \code{is_df}, \code{is_scale}: degrees of freedom (default 5) and scale inflation
 (default 4) of the AIS proposal.
 \item \code{lr}: maximum weight of the new estimates when the AIS proposal is
