@@ -64,10 +64,12 @@ adaptive_gh_quadrature <- function(log_g_fn, z_start, n_quad,
     i <- which.max(lg)
     if (!(lg[i] > lg_mode + restart_gap)) break
     n_restart <- n_restart + 1
-    quad_new <- grid_from(quad$Z[i, ])
+    # An error in the new grid keeps the current one
+    quad_new <- tryCatch(grid_from(quad$Z[i, ]), error = function(e) NULL)
+    if (is.null(quad_new)) break
     timing <- Map(`+`, timing, quad_new$timing)
     lg_mode <- -quad_new$optim$value
-    if (!(quad_new$log_evidence > quad$log_evidence)) break
+    if (!isTRUE(quad_new$log_evidence > quad$log_evidence)) break
     quad <- quad_new
   }
   quad$timing <- timing

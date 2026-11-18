@@ -55,6 +55,20 @@ test_that("AIS restarts the mode search from a draw well above the mode", {
                                        n_draw = 256, min_ess = 64, n_restart_max = 0)
   expect_equal(ais0$n_restart, 0)
   expect_gt(ais0$n_iter, 2L)
+  # An error in the restarted mode search keeps the current proposal: as without restarts
+  laplace_real <- laplace_mode
+  calls <- 0
+  failing_restart <- function(...) {
+    calls <<- calls + 1
+    if (calls > 1) stop("mocked error")
+    laplace_real(...)
+  }
+  set.seed(1)
+  ais_err <- with_mocked_bindings(
+    adaptive_importance_sampling(two_bumps_log_g, z_start = c(0, 0), n_draw = 256, min_ess = 64),
+    laplace_mode = failing_restart)
+  expect_gte(ais_err$n_restart, 1)
+  expect_equal(ais_err$log_evidence, ais0$log_evidence)
 })
 
 test_that("AIS adapts and pools draws until min_ess is reached", {

@@ -111,10 +111,16 @@ adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
     i <- which.max(lg_new)
     if (n_restart < n_restart_max && lg_new[i] > lg_mode + restart_gap) {
       n_restart <- n_restart + 1
-      lap_new <- laplace_mode(log_g_mode, Z_new[i, ], ...)
-      timing$mode <- timing$mode + lap_new$timing$mode
-      timing$hessian <- timing$hessian + lap_new$timing$hessian
-      if (-lap_new$optim$value > lg_mode) {
+      # An error in the new mode search keeps the current proposal
+      lap_new <- tryCatch(laplace_mode(log_g_mode, Z_new[i, ], ...), error = function(e) {
+        if (isTRUE(verbose >= 2)) cat("Restart of the mode search: error,", conditionMessage(e), "\n")
+        NULL
+      })
+      if (!is.null(lap_new)) {
+        timing$mode <- timing$mode + lap_new$timing$mode
+        timing$hessian <- timing$hessian + lap_new$timing$hessian
+      }
+      if (!is.null(lap_new) && isTRUE(-lap_new$optim$value > lg_mode)) {
         if (isTRUE(verbose >= 2)) {
           cat(sprintf("Restart of the mode search: log g at the mode %.2f -> %.2f\n",
                       lg_mode, -lap_new$optim$value))

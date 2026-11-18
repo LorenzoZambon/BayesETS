@@ -66,6 +66,18 @@ test_that("quadrature restarts the mode search from a node well above the mode",
   q0 <- adaptive_gh_quadrature(two_bumps_log_g, z_start = c(0, 0), n_quad = 9,
                                n_restart_max = 0)
   expect_lt(q0$log_evidence, log(1.001) - 1)
+  # An error in the new grid keeps the first one
+  gh_real <- gh_grid
+  calls <- 0
+  failing_grid <- function(...) {
+    calls <<- calls + 1
+    if (calls > 1) stop("mocked error")
+    gh_real(...)
+  }
+  q_err <- with_mocked_bindings(adaptive_gh_quadrature(two_bumps_log_g, z_start = c(0, 0), n_quad = 9),
+                                gh_grid = failing_grid)
+  expect_equal(q_err$n_restart, 1)
+  expect_equal(q_err$log_evidence, q0$log_evidence)
 })
 
 test_that("quadrature keeps matrices as matrices for d = 1", {
