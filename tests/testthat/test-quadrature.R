@@ -43,9 +43,29 @@ test_that("quadrature recovers the normalising constant of a Gaussian (d = 1..4)
     q <- adaptive_gh_quadrature(gaussian_log_g(mu, S, log_c),
                                        z_start = rep(0, d), n_quad = 5)
     expect_lt(abs(q$log_evidence - log_c), 1e-8)
+    expect_equal(q$n_restart, 0)
     # Normalised weights reproduce the mean of the Gaussian.
     expect_lt(max(abs(colSums(q$w * q$Z) - mu)), 1e-8)
   }
+})
+
+test_that("quadrature restarts the mode search from a node well above the mode", {
+  # Local mode at 0 (mass 1e-3), main mode at (6, 0): the mode search from 0
+  # stops at the local mode, a node finds the main one. Without the restart,
+  # the log evidence is 1.6 too low
+  two_bumps_log_g <- function(Z) {
+    a <- -0.5 * rowSums(Z^2) + log(1e-3)
+    b <- -0.5 * rowSums(sweep(Z, 2, c(6, 0))^2)
+    m <- pmax(a, b)
+    list(log_g = m + log(exp(a - m) + exp(b - m)) - log(2 * pi))
+  }
+  q <- adaptive_gh_quadrature(two_bumps_log_g, z_start = c(0, 0), n_quad = 9)
+  expect_equal(q$n_restart, 1)
+  expect_lt(max(abs(q$zhat - c(6, 0))), 0.01)
+  expect_lt(abs(q$log_evidence - log(1.001)), 0.01)
+  q0 <- adaptive_gh_quadrature(two_bumps_log_g, z_start = c(0, 0), n_quad = 9,
+                               n_restart_max = 0)
+  expect_lt(q0$log_evidence, log(1.001) - 1)
 })
 
 test_that("quadrature keeps matrices as matrices for d = 1", {
