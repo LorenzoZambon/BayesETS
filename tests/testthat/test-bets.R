@@ -34,6 +34,16 @@ test_that("bets() stops with a clear error when no model can be fitted", {
     "No model could be fitted")
 })
 
+test_that("bets() gives zero weight to a model whose fit stops with an error", {
+  set.seed(1)
+  expect_warning(
+    fit <- with_mocked_bindings(bets(ts(cumsum(rnorm(30))), model = c("ANN", "AAdN")),
+                                integrate_ais = function(...) stop("mocked error")),
+    "Model AAdN\\. Error in the fit: mocked error; the model gets zero weight")
+  expect_equal(unname(fit$fit$model_weights), c(1, 0))
+  expect_true(all(is.finite(predict(fit, h = 3)$mean)))
+})
+
 # ---------------------------------------------------------------------------
 # Return value structure
 # ---------------------------------------------------------------------------

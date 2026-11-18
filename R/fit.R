@@ -35,7 +35,16 @@ fit_bets_models <- function(y,
     t0 <- proc.time()[3]
 
     integration_i <- resolve_integration(integration, model_components[[i]])
-    res_i <- fit_one_model(y_centred, model_components[[i]], ctrl, integration_i)
+    # An error in the fit of a model gives it zero weight
+    res_i <- tryCatch(
+      fit_one_model(y_centred, model_components[[i]], ctrl, integration_i),
+      error = function(e) {
+        warning(sprintf("Model %s. Error in the fit: %s; the model gets zero weight",
+                        ets_label(model_components[[i]]), conditionMessage(e)), call. = FALSE)
+        list(particles = NULL, ess = NA, n_iter = NA, prop_params = NULL,
+             log_evidence = -Inf, timing = NULL)
+      }
+    )
     # Undo the centring (no particles for failed models)
     if (!is.null(res_i$particles)) {
       res_i$particles$final_mean["l", ] <- res_i$particles$final_mean["l", ] + y_shift
