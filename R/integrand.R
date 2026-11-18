@@ -119,7 +119,7 @@ laplace_mode <- function(log_g_fn, z_start,
 
   # Hessian
   t0 <- proc.time()[3]
-  H <- fd_hessian(neg_log_g, zhat, fd_step)
+  H <- fd_hessian(neg_log_g, zhat, fd_step, penalty = penalty)
   H <- (H + t(H)) / 2
   eig <- eigen(H, symmetric = TRUE)
   lambda <- eig$values
@@ -137,8 +137,11 @@ laplace_mode <- function(log_g_fn, z_start,
   list(zhat = zhat, H = H, Lmat = Lmat, log_det_H = log_det_H, optim = opt, timing = timing)
 }
 
-# Hessian of f at z by central differences, all points in one call of f
-fd_hessian <- function(f, z, h) {
+# Hessian of f at z by central differences, all points in one call of f.
+# If some points have f >= penalty (log g not finite), the Hessian is
+# repaired: one-sided differences on the diagonal, no cross terms there, and
+# eigenvalues in [1 / sd_max^2, 1 / sd_min^2]
+fd_hessian <- function(f, z, h, penalty = Inf, sd_min = 1e-3, sd_max = 2) {
   d  <- length(z)
   E  <- diag(h, d)
   ij <- which(upper.tri(E), arr.ind = TRUE)   # pairs i < j
@@ -163,7 +166,37 @@ fd_hessian <- function(f, z, h) {
     H[ij] <- (f_pp - f_pm - f_mp + f_mm) / (4 * h^2)
     H[ij[, 2:1, drop = FALSE]] <- H[ij]
   }
-  H
+
+  bad <- !is.finite(fv) | fv >= penalty
+  if (!any(bad)) return(H)
+  if (bad[1]) return(diag(1 / sd_max^2, d))
+
+  # Diagonal: one-sided differences if one side is invalid, none if both are
+  bp <- bad[1 + seq_len(d)]
+  bm <- bad[1 + d + seq_len(d)]
+  diag(H)[bp & bm] <- NA
+  one <- which(xor(bp, bm))
+  if (length(one) > 0) {
+    s  <- ifelse(bp[one], -1, 1)               # side of the valid point
+    f1 <- ifelse(bp[one], fm[one], fp[one])
+    f2 <- f(sweep(2 * s * E[one, , drop = FALSE], 2, z, "+"))
+    h1 <- (f0 - 2 * f1 + f2) / h^2
+    h1[!is.finite(f2) | f2 >= penalty] <- NA
+    diag(H)[one] <- h1
+  }
+
+  # Cross terms: none if a corner is invalid
+  if (n_pairs > 0) {
+    corner_bad <- matrix(bad[1 + 2 * d + seq_len(4 * n_pairs)], ncol = 4)
+    cut <- rowSums(corner_bad) > 0 | is.na(diag(H)[ij[, 1]]) | is.na(diag(H)[ij[, 2]])
+    H[ij[cut, , drop = FALSE]] <- 0
+    H[ij[cut, 2:1, drop = FALSE]] <- 0
+  }
+  diag(H)[is.na(diag(H))] <- 1 / sd_max^2
+
+  eig <- eigen((H + t(H)) / 2, symmetric = TRUE)
+  lambda <- pmin(pmax(eig$values, 1 / sd_max^2), 1 / sd_min^2)
+  eig$vectors %*% (lambda * t(eig$vectors))
 }
 
 

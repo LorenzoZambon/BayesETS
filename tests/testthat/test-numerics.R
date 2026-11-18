@@ -58,6 +58,22 @@ test_that("the mode search is not trapped in the unstable region (nottem, AAN)",
   expect_gt(lg(matrix(lap$zhat, 1))$log_g, best_of_1024 - 1)
 })
 
+test_that("fd_hessian() avoids the points where f is not valid", {
+  A <- matrix(c(2, 0.5, 0.5, 1), 2)
+  f <- function(Z) 0.5 * rowSums((Z %*% A) * Z)
+  pen <- 1e10
+  # All points valid: central differences
+  expect_equal(fd_hessian(f, c(0, 0), 1e-3, penalty = pen), A, tolerance = 1e-6)
+  # z1 > 0 invalid: one-sided difference for z1, no cross term
+  f_hole <- function(Z) ifelse(Z[, 1] > 1e-4, pen, f(Z))
+  expect_equal(fd_hessian(f_hole, c(0, 0), 1e-3, penalty = pen), diag(c(2, 1)), tolerance = 1e-6)
+  # |z1| > 0 invalid: curvature of z1 set to 1 / sd_max^2
+  f_gap <- function(Z) ifelse(abs(Z[, 1]) > 1e-4, pen, f(Z))
+  expect_equal(fd_hessian(f_gap, c(0, 0), 1e-3, penalty = pen), diag(c(0.25, 1)), tolerance = 1e-6)
+  # Invalid centre
+  expect_equal(fd_hessian(function(Z) rep(pen, nrow(Z)), c(0, 0), 1e-3, penalty = pen), diag(0.25, 2))
+})
+
 # ---------------------------------------------------------------------------
 # Priors of sigma^2 and of the initial states
 # ---------------------------------------------------------------------------
