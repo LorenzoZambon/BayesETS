@@ -4,6 +4,12 @@ resolve_by_d <- function(param, d) {
   as.integer(param[[min(as.integer(d), length(param))]])
 }
 
+# Restart of the mode search: if a later point has log g above the value at the
+# mode by more than .RESTART_GAP, the search stopped too early and restarts
+# from there, at most .N_RESTART_MAX times
+.RESTART_GAP <- 2
+.N_RESTART_MAX <- 2
+
 # Default control parameters. N_draw and n_quad have one value per number
 # d = 1, ..., 4 of smoothing parameters (see resolve_by_d()).
 bets_control_defaults <- function() {
