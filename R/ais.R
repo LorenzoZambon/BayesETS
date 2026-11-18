@@ -56,7 +56,7 @@ integrate_ais <- function(log_g_fn, z_start, theta_names, ctrl,
 # n_restart_max times), and the proposal moves to the new mode.
 adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
                                          df = 5, scale = 4,
-                                         n_iter_max = 30, lr = 0.9,
+                                         n_iter_max = 20, lr = 0.9,
                                          verbose = 0, log_g_mode = log_g_fn,
                                          restart_gap = .RESTART_GAP,
                                          n_restart_max = .N_RESTART_MAX, ...) {

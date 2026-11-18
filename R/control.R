@@ -14,7 +14,7 @@ resolve_by_d <- function(param, d) {
 # d = 1, ..., 4 of smoothing parameters (see resolve_by_d()).
 bets_control_defaults <- function() {
   list(
-    N_iter_max = 30,
+    N_iter_max = 20,
     N_draw     = c(128L, 256L, 512L, 1024L),
     nu0 = 3,
     psi0 = NULL,
