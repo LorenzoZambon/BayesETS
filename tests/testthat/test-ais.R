@@ -26,9 +26,50 @@ test_that("AIS recovers the normalising constant of a Gaussian (d = 1..4)", {
                                                z_start = rep(0, d), n_draw = 1024,
                                                min_ess = 256)
     expect_lte(ais$n_iter, 2L)
+    expect_equal(ais$n_restart, 0)
     expect_lt(abs(ais$log_evidence - log_c), 0.02)
     expect_lt(max(abs(colSums(ais$w * ais$Z) - mu)), 0.05)
   }
+})
+
+test_that("AIS restarts the mode search from a draw well above the mode", {
+  # Local mode at 0 (mass 1e-3), main mode at (6, 0): the mode search from 0
+  # stops at the local mode, the draws find the main one. Without the restart:
+  # 6-8 iterations
+  two_bumps_log_g <- function(Z) {
+    a <- -0.5 * rowSums(Z^2) + log(1e-3)
+    b <- -0.5 * rowSums(sweep(Z, 2, c(6, 0))^2)
+    m <- pmax(a, b)
+    list(log_g = m + log(exp(a - m) + exp(b - m)) - log(2 * pi))
+  }
+  set.seed(1)
+  ais <- adaptive_importance_sampling(two_bumps_log_g, z_start = c(0, 0),
+                                      n_draw = 256, min_ess = 64)
+  expect_equal(ais$n_restart, 1)
+  expect_lt(max(abs(ais$zhat - c(6, 0))), 0.01)
+  expect_lte(ais$n_iter, 2L)
+  expect_lt(abs(ais$log_evidence - log(1.001)), 0.05)
+  # No restarts with n_restart_max = 0
+  set.seed(1)
+  ais0 <- adaptive_importance_sampling(two_bumps_log_g, z_start = c(0, 0),
+                                       n_draw = 256, min_ess = 64, n_restart_max = 0)
+  expect_equal(ais0$n_restart, 0)
+  expect_gt(ais0$n_iter, 2L)
+  # An error in the restarted mode search keeps the current proposal: as without restarts
+  laplace_real <- laplace_mode
+  counter <- new.env()
+  counter$calls <- 0
+  failing_restart <- function(...) {
+    counter$calls <- counter$calls + 1
+    if (counter$calls > 1) stop("mocked error")
+    laplace_real(...)
+  }
+  set.seed(1)
+  ais_err <- with_mocked_bindings(
+    adaptive_importance_sampling(two_bumps_log_g, z_start = c(0, 0), n_draw = 256, min_ess = 64),
+    laplace_mode = failing_restart)
+  expect_gte(ais_err$n_restart, 1)
+  expect_equal(ais_err$log_evidence, ais0$log_evidence)
 })
 
 test_that("AIS adapts and pools draws until min_ess is reached", {
@@ -69,14 +110,24 @@ test_that("fit_one_model() with AIS returns weighted particles, ESS and proposal
   }
 })
 
-test_that("fit_one_model() with AIS gives zero weight when min_ess is not reached", {
+test_that("fit_one_model() with AIS keeps the estimate when min_ess is not reached", {
   set.seed(1)
   y <- ts(rnorm(20))
   ctrl <- resolve_bets_control(list(min_ess = 1e6, N_iter_max = 2))
   ctrl <- utils::modifyList(ctrl, prior_scales(y, ctrl))
   expect_warning(res <- fit_one_model(y, c("A", "N", "N", "FALSE"), ctrl, "ais"),
-                 "zero weight")
-  expect_equal(res$log_evidence, -Inf)
-  expect_null(res$particles)
+                 "Model ANN\\. AIS: ESS = .* the weight of the model is approximate")
+  expect_true(is.finite(res$log_evidence))
+  expect_false(is.null(res$particles))
   expect_equal(res$n_iter, 2L)
+})
+
+test_that("integrate_ais() gives zero weight only if log g is not finite at any draw", {
+  ctrl <- resolve_bets_control(list())
+  set.seed(1)
+  int <- integrate_ais(function(Z) list(log_g = rep(-Inf, nrow(Z))), c(0, 0, 0),
+                       c("alpha", "beta", "gamma"), ctrl)
+  expect_equal(int$log_evidence, -Inf)
+  expect_match(int$failure, "not finite at any draw; the model gets zero weight")
+  expect_null(int$low_ess)
 })

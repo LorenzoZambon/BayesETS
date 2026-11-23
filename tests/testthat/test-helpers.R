@@ -91,9 +91,9 @@ test_that("compute_stacking_weights() handles K=3 models", {
 # ---------------------------------------------------------------------------
 
 # Shared fit object used across path tests
-local({
+fit_ann <- local({
   set.seed(42)
-  fit_ann <<- bets(ts(rnorm(30)), model = "ANN")
+  bets(ts(rnorm(30)), model = "ANN")
 })
 
 test_that("simulate_paths() returns a finite n_traj x h matrix", {

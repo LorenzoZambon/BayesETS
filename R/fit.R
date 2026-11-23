@@ -35,7 +35,16 @@ fit_bets_models <- function(y,
     t0 <- proc.time()[3]
 
     integration_i <- resolve_integration(integration, model_components[[i]])
-    res_i <- fit_one_model(y_centred, model_components[[i]], ctrl, integration_i)
+    # An error in the fit of a model gives it zero weight
+    res_i <- tryCatch(
+      fit_one_model(y_centred, model_components[[i]], ctrl, integration_i),
+      error = function(e) {
+        warning(sprintf("Model %s. Error in the fit: %s; the model gets zero weight",
+                        ets_label(model_components[[i]]), conditionMessage(e)), call. = FALSE)
+        list(particles = NULL, ess = NA, n_iter = NA, prop_params = NULL,
+             log_evidence = -Inf, timing = NULL)
+      }
+    )
     # Undo the centring (no particles for failed models)
     if (!is.null(res_i$particles)) {
       res_i$particles$final_mean["l", ] <- res_i$particles$final_mean["l", ] + y_shift
@@ -49,8 +58,8 @@ fit_bets_models <- function(y,
   }
 
   if (!any(is.finite(log_marginal_liks))) {
-    stop("No model could be fitted: all of them got zero weight (see the warnings). ",
-         "Larger N_draw or N_iter_max in control may help AIS.", call. = FALSE)
+    stop("No model could be fitted: all of them got zero weight (see the warnings).",
+         call. = FALSE)
   }
 
   t0 <- proc.time()[3]
@@ -104,9 +113,11 @@ fit_one_model <- function(y, model_components, ctrl, integration) {
   int <- integrate(log_g_rb, scan$Z[1, ], theta_names, ctrl, log_g_mode = log_g_value)
   timing <- c(list(scan = t_scan), int$timing, list(post = 0))
 
-  # The model gets zero weight
+  # Failure: the model gets zero weight. Low ESS: the estimate is kept
+  label <- ets_label(model_components)
   failed <- !is.null(int$failure)
-  if (failed) warning(int$failure, call. = FALSE)
+  if (failed) warning(sprintf("Model %s. %s", label, int$failure), call. = FALSE)
+  if (!is.null(int$low_ess)) warning(sprintf("Model %s. %s", label, int$low_ess), call. = FALSE)
 
   # Weighted particles of the posterior (quadrature nodes or AIS draws), without the
   # negligible ones: theta, weights, \sigma^2 | theta ~ sigma2_scale / \chi^2_{sigma2_df},

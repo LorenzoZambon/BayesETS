@@ -6,7 +6,9 @@
 # posterior mode, adapted while the ESS is below min_ess.
 
 # AIS over the smoothing parameters, from z_start: log evidence and weighted
-# draws of all iterations (theta, w, ml_res); failure: message, or NULL
+# draws of all iterations (theta, w, ml_res). failure: message if log g is not
+# finite at any draw (zero weight), or NULL. low_ess: message if the ESS is
+# below min_ess (the estimate is kept, approximate weight), or NULL
 integrate_ais <- function(log_g_fn, z_start, theta_names, ctrl,
                           log_g_mode = log_g_fn) {
   d <- length(theta_names)
@@ -31,8 +33,11 @@ integrate_ais <- function(log_g_fn, z_start, theta_names, ctrl,
     n_iter = ais$n_iter,
     proposal = proposal,
     timing = ais$timing,
-    failure = if (ais$ess < min_ess) {
-      sprintf("AIS: ESS = %.0f below min_ess = %.0f after %d iterations; the model gets zero weight",
+    failure = if (!is.finite(ais$log_evidence)) {
+      "AIS: log g is not finite at any draw; the model gets zero weight"
+    },
+    low_ess = if (is.finite(ais$log_evidence) && ais$ess < min_ess) {
+      sprintf("AIS: ESS = %.0f below min_ess = %.0f after %d iterations; the weight of the model is approximate",
               ais$ess, min_ess, ais$n_iter)
     }
   )
@@ -46,14 +51,23 @@ integrate_ais <- function(log_g_fn, z_start, theta_names, ctrl,
 # adaptive_gh_quadrature()). Student-t proposal at the mode of log g, with scale
 # matrix scale * H^{-1}; updated while ESS < min_ess, adding n_draw draws per
 # iteration. The draws of all iterations are pooled and weighted with the
-# mixture of the proposals.
+# mixture of the proposals. If a draw has log g above the value at the mode by
+# more than restart_gap, the mode search restarts from the best draw (at most
+# n_restart_max times), and the proposal moves to the new mode.
 adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
                                          df = 5, scale = 4,
-                                         n_iter_max = 30, lr = 0.9,
-                                         verbose = 0, log_g_mode = log_g_fn, ...) {
+                                         n_iter_max = 20, lr = 0.9,
+                                         verbose = 0, log_g_mode = log_g_fn,
+                                         restart_gap = .RESTART_GAP,
+                                         n_restart_max = .N_RESTART_MAX, ...) {
   lap <- laplace_mode(log_g_mode, z_start, ...)
-  proposal <- list(mus = lap$zhat, Sigma = scale * tcrossprod(lap$Lmat), df = df)
+  lg_mode <- -lap$optim$value
+  laplace_proposal <- function(lap) {
+    list(mus = lap$zhat, Sigma = scale * tcrossprod(lap$Lmat), df = df)
+  }
+  proposal <- laplace_proposal(lap)
   timing <- c(lap$timing, list(draws = 0, update = 0))
+  n_restart <- 0
 
   proposals <- list()
   draw_evals <- list()
@@ -91,6 +105,33 @@ adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
     }
     if (ess >= min_ess || iter == n_iter_max) break
 
+    # Restart of the mode search from the best new draw (the earlier draws are
+    # below the value at the mode + restart_gap)
+    lg_new <- replace(draw_eval$log_g, !is.finite(draw_eval$log_g), -Inf)
+    i <- which.max(lg_new)
+    if (n_restart < n_restart_max && lg_new[i] > lg_mode + restart_gap) {
+      n_restart <- n_restart + 1
+      # An error in the new mode search keeps the current proposal
+      lap_new <- tryCatch(laplace_mode(log_g_mode, Z_new[i, ], ...), error = function(e) {
+        if (isTRUE(verbose >= 2)) cat("Restart of the mode search: error,", conditionMessage(e), "\n")
+        NULL
+      })
+      if (!is.null(lap_new)) {
+        timing$mode <- timing$mode + lap_new$timing$mode
+        timing$hessian <- timing$hessian + lap_new$timing$hessian
+      }
+      if (!is.null(lap_new) && isTRUE(-lap_new$optim$value > lg_mode)) {
+        if (isTRUE(verbose >= 2)) {
+          cat(sprintf("Restart of the mode search: log g at the mode %.2f -> %.2f\n",
+                      lg_mode, -lap_new$optim$value))
+        }
+        lap <- lap_new
+        lg_mode <- -lap$optim$value
+        proposal <- laplace_proposal(lap)
+        next
+      }
+    }
+
     # Proposal update
     t0 <- proc.time()[3]
     proposal <- update_proposal(Z, w, proposal, lr = lr)
@@ -104,6 +145,7 @@ adaptive_importance_sampling <- function(log_g_fn, z_start, n_draw, min_ess,
     draw_evals = draw_evals,
     ess = ess,
     n_iter = iter,
+    n_restart = n_restart,
     proposal = proposal,
     zhat = lap$zhat,
     timing = timing

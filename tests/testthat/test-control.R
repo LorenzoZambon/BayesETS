@@ -10,7 +10,7 @@ test_that("resolve_bets_control() fills in all defaults for empty list", {
 
 test_that("resolve_bets_control() uses correct default N_iter_max", {
   ctrl <- resolve_bets_control(list())
-  expect_equal(ctrl$N_iter_max, 30)
+  expect_equal(ctrl$N_iter_max, 20)
 })
 
 test_that("resolve_bets_control() uses correct default lr", {
@@ -40,7 +40,7 @@ test_that("resolve_bets_control() overrides N_iter_max", {
 test_that("resolve_bets_control() overrides lr while keeping other defaults", {
   ctrl <- resolve_bets_control(list(lr = 0.5))
   expect_equal(ctrl$lr, 0.5)
-  expect_equal(ctrl$N_iter_max, 30)
+  expect_equal(ctrl$N_iter_max, 20)
 })
 
 test_that("resolve_bets_control() overrides N_draw", {

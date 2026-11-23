@@ -1,8 +1,8 @@
 # Shared fitted object, created once for the whole file
-local({
+fit_plot <- local({
   set.seed(1)
-  fit_plot <<- bets(ts(10 + rep(c(2, -1, 0, -1), 8) + rnorm(32, sd = 0.5), frequency = 4),
-                    model = c("ANN", "ANA", "AAdA"))
+  bets(ts(10 + rep(c(2, -1, 0, -1), 8) + rnorm(32, sd = 0.5), frequency = 4),
+       model = c("ANN", "ANA", "AAdA"))
 })
 
 # Integral of each plotted density over its range
@@ -42,8 +42,8 @@ test_that("plot.bets() plots any fitted model on request, and errors for the oth
   expect_no_error(plot(fit_plot, models = lowest, ask = FALSE))
   expect_error(plot(fit_plot, models = "AAA"), "models must be labels of the fitted models")
   set.seed(1)
-  f <- suppressWarnings(bets(USAccDeaths, model = c("ANN", "AAdA"),
-                             control = list(min_ess = 1e6, N_iter_max = 2)))
+  f <- suppressWarnings(with_mocked_bindings(bets(USAccDeaths, model = c("ANN", "AAdA")),
+                                             integrate_ais = failing_ais))
   expect_error(plot(f, models = "AAdA"), "No posterior for the failed model")
   expect_error(plot(fit_plot, level = 100), "level must be")
 })

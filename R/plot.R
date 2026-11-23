@@ -137,6 +137,7 @@ season_order <- function(y, m) {
 # Weighted kernel density of a parameter in the interval `bounds`, from its
 # particles, reflected at the bounds (so that no mass leaks outside them).
 # Bandwidth by Silverman's rule, with the effective number of particles.
+# NULL for a point mass (e.g. a single particle)
 parameter_density <- function(x, w, bounds, n = 512) {
   keep <- w > 0
   x <- x[keep]
@@ -144,6 +145,7 @@ parameter_density <- function(x, w, bounds, n = 512) {
   sd_x <- sqrt(sum(w * (x - sum(w * x))^2))
   iqr_x <- diff(weighted_quantile(x, w, c(0.25, 0.75))) / 1.34
   spread <- if (iqr_x > 0) min(sd_x, iqr_x) else sd_x
+  if (!(spread > 0)) return(NULL)
   bw <- 0.9 * spread * sum(w^2)^(1 / 5)                   # n_eff = 1 / sum(w^2)
   k <- stats::density(c(x, 2 * bounds[1] - x, 2 * bounds[2] - x), weights = rep(w, 3) / 3,
                       bw = bw, n = n, from = bounds[1], to = bounds[2])

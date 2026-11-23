@@ -1,8 +1,8 @@
 # Shared fitted objects, created once for the whole file
-local({
+fit_seas <- local({
   set.seed(1)
-  fit_seas <<- bets(ts(10 + rep(c(2, -1, 0, -1), 8) + rnorm(32, sd = 0.5), frequency = 4),
-                    model = c("ANN", "ANA", "AAdA"))
+  bets(ts(10 + rep(c(2, -1, 0, -1), 8) + rnorm(32, sd = 0.5), frequency = 4),
+       model = c("ANN", "ANA", "AAdA"))
 })
 
 # ---------------------------------------------------------------------------
@@ -126,6 +126,28 @@ test_that("summary of a constant series: uniform prior of alpha, no log evidence
   expect_equal(unlist(s$states$ANN["l", ]), c(5, 0, 5, 5), ignore_attr = TRUE)
   out <- capture.output(print(s))
   expect_true(any(grepl("ANN: weight 1.000$", out)))
+})
+
+test_that("a model kept with a single particle is a point mass in summary() and plot()", {
+  # AIS with all the weight on one draw, as after a run that ends with ESS = 1
+  real_ais <- integrate_ais
+  one_draw_ais <- function(...) {
+    int <- real_ais(...)
+    int$w <- replace(0 * int$w, which.max(int$w), 1)
+    int
+  }
+  set.seed(1)
+  fit <- with_mocked_bindings(bets(USAccDeaths, model = "AAA"), integrate_ais = one_draw_ais)
+  theta <- fit$fit$results[[1]]$particles$theta
+  expect_equal(nrow(theta), 1)
+  s <- summary(fit, states = TRUE)
+  expect_equal(s$parameters$AAA[c("alpha", "beta", "gamma"), "2.5%"], round(theta[1, ], 4), ignore_attr = TRUE)
+  expect_equal(s$parameters$AAA[c("alpha", "beta", "gamma"), "sd"], rep(0, 3))
+  expect_no_error(capture.output(print(fit), print(s)))
+  grDevices::pdf(NULL)
+  on.exit(grDevices::dev.off())
+  d <- plot(fit, states = TRUE, ask = FALSE)
+  expect_true(all(is.na(d$density[d$parameter %in% c("alpha", "beta", "gamma")])))
 })
 
 # ---------------------------------------------------------------------------

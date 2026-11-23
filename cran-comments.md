@@ -1,3 +1,13 @@
+## Resubmission
+
+This is a resubmission. Changes:
+
+* All uses of `<<-` have been removed from the tests.
+* Version number increased to 0.1.1.
+
+This version also includes fixes to the numerical integration, made
+since the previous submission (listed in NEWS.md).
+
 ## R CMD check results
 
 0 errors | 0 warnings | 1 note
@@ -11,7 +21,7 @@
 * local: Windows 11, R 4.6.1
 * GitHub Actions: macOS and Windows (R release); Ubuntu (R devel, release and oldrel-1)
 * win-builder: R devel and R release
-* R-hub: macos-arm64, clang-asan, clang-ubsan, valgrind
+* R-hub: macos-arm64, nold, mkl, clang-asan, clang-ubsan
 
 ## Downstream dependencies
 

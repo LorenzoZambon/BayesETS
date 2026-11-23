@@ -113,6 +113,7 @@ weighted_quantile <- function(x, w, probs) {
   o <- order(x[keep])
   x <- x[keep][o]
   w <- w[keep][o] / sum(w[keep])
+  if (length(x) == 1) return(rep(x, length(probs)))   # a point mass
   stats::approx(cumsum(w) - w / 2, x, xout = probs, rule = 2, ties = "ordered")$y
 }
 

@@ -14,8 +14,8 @@ integrate_quadrature <- function(log_g_fn, z_start, theta_names, ctrl,
   quad <- adaptive_gh_quadrature(log_g_fn, z_start, n_quad, log_g_mode = log_g_mode)
 
   if (isTRUE(ctrl$verbose >= 2)) {
-    cat(sprintf("RB Gauss-Hermite quadrature: %d nodes (%d per dimension)",
-                nrow(quad$G), n_quad))
+    cat(sprintf("RB Gauss-Hermite quadrature: %d nodes (%d per dimension), %d restarts of the mode search",
+                nrow(quad$G), n_quad, quad$n_restart))
     cat(sprintf("\nlog evidence = %.4f\n", quad$log_evidence))
   }
 
@@ -39,16 +39,55 @@ integrate_quadrature <- function(log_g_fn, z_start, theta_names, ctrl,
 # QUADRATURE HELPERS
 
 # Adaptive Gauss-Hermite quadrature of g = exp(log g) on R^d, with n_quad nodes
-# per dimension. log_g_fn(Z) returns a list with the values log_g at the rows
-# of Z (other elements are kept in node_eval); z_start starts the mode search,
-# done with log_g_mode (same values, possibly cheaper). Nodes z_i = zhat + Lmat x_i, and
-#   \int g(z) dz = |Lmat| E[g(zhat + Lmat X) / \phi_d(X)],  X ~ N(0, I_d)
+# per dimension (grid: gh_grid()). If a node has log g above the value at the
+# mode by more than restart_gap, the mode search restarts from the best node,
+# with a new grid (at most n_restart_max times); the grid with the larger
+# evidence is kept.
 adaptive_gh_quadrature <- function(log_g_fn, z_start, n_quad,
                                    fd_step = 1e-3,
                                    lambda_floor = 1e-2,
                                    z_bound = 25,
                                    penalty = 1e10,
-                                   log_g_mode = log_g_fn) {
+                                   log_g_mode = log_g_fn,
+                                   restart_gap = .RESTART_GAP,
+                                   n_restart_max = .N_RESTART_MAX) {
+  grid_from <- function(z) {
+    gh_grid(log_g_fn, z, n_quad, fd_step = fd_step, lambda_floor = lambda_floor,
+            z_bound = z_bound, penalty = penalty, log_g_mode = log_g_mode)
+  }
+  quad <- grid_from(z_start)
+  timing <- quad$timing
+  lg_mode <- -quad$optim$value
+  n_restart <- 0
+  while (n_restart < n_restart_max) {
+    lg <- replace(quad$node_eval$log_g, !is.finite(quad$node_eval$log_g), -Inf)
+    i <- which.max(lg)
+    if (!(lg[i] > lg_mode + restart_gap)) break
+    n_restart <- n_restart + 1
+    # An error in the new grid keeps the current one
+    quad_new <- tryCatch(grid_from(quad$Z[i, ]), error = function(e) NULL)
+    if (is.null(quad_new)) break
+    timing <- Map(`+`, timing, quad_new$timing)
+    lg_mode <- -quad_new$optim$value
+    if (!isTRUE(quad_new$log_evidence > quad$log_evidence)) break
+    quad <- quad_new
+  }
+  quad$timing <- timing
+  quad$n_restart <- n_restart
+  quad
+}
+
+# Gauss-Hermite grid at the mode of g = exp(log g), with n_quad nodes per
+# dimension. log_g_fn(Z) returns a list with the values log_g at the rows of Z
+# (other elements are kept in node_eval); z_start starts the mode search, done
+# with log_g_mode (same values, possibly cheaper). Nodes z_i = zhat + Lmat x_i, and
+#   \int g(z) dz = |Lmat| E[g(zhat + Lmat X) / \phi_d(X)],  X ~ N(0, I_d)
+gh_grid <- function(log_g_fn, z_start, n_quad,
+                    fd_step = 1e-3,
+                    lambda_floor = 1e-2,
+                    z_bound = 25,
+                    penalty = 1e10,
+                    log_g_mode = log_g_fn) {
   d <- length(z_start)
 
   # Mode and Hessian

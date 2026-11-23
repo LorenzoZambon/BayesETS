@@ -1,7 +1,7 @@
 Package: BayesETS
 Type: Package
 Title: Forecasting using Bayesian ETS
-Version: 0.1.0
+Version: 0.1.1
 Authors@R: c(
     person(
       given = "Lorenzo", 
@@ -37,7 +37,6 @@ LinkingTo:
   RcppArmadillo
 Roxygen: list(markdown = TRUE)
 Suggests:
-    testthat (>= 3.0.0),
-    covr
+    testthat (>= 3.1.7)
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.1.0
