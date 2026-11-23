@@ -2,10 +2,10 @@
 # fitted() and residuals()
 # ---------------------------------------------------------------------------
 
-local({
+fit_fr <- local({
   set.seed(1)
   y <- ts(10 + cumsum(rnorm(40)) + rep(c(2, -1, 0, -1), 10), start = c(2000, 1), frequency = 4)
-  fit_fr <<- bets(y)
+  bets(y)
 })
 
 test_that("type = 'mean': ts with the time index of y, fitted + residuals = y", {

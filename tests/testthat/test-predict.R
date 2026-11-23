@@ -1,10 +1,12 @@
 # Shared fitted objects, created once for the whole file
-local({
+fit_ann <- local({
   set.seed(42)
-  fit_ann  <<- bets(ts(rnorm(20)), model = "ANN")
+  bets(ts(rnorm(20)), model = "ANN")
+})
 
+fit_seas <- local({
   set.seed(42)
-  fit_seas <<- bets(ts(rnorm(24), frequency = 4), model = "ANA")
+  bets(ts(rnorm(24), frequency = 4), model = "ANA")
 })
 
 # ---------------------------------------------------------------------------

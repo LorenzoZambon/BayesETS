@@ -57,10 +57,11 @@ test_that("AIS restarts the mode search from a draw well above the mode", {
   expect_gt(ais0$n_iter, 2L)
   # An error in the restarted mode search keeps the current proposal: as without restarts
   laplace_real <- laplace_mode
-  calls <- 0
+  counter <- new.env()
+  counter$calls <- 0
   failing_restart <- function(...) {
-    calls <<- calls + 1
-    if (calls > 1) stop("mocked error")
+    counter$calls <- counter$calls + 1
+    if (counter$calls > 1) stop("mocked error")
     laplace_real(...)
   }
   set.seed(1)
